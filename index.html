@@ -1,0 +1,140 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>City Sandbox · 上帝视角沙盒建造</title>
+<style>
+  :root{
+    --bg:#0e1116; --panel:#161b22cc; --panel-solid:#161b22; --line:#2a313c;
+    --txt:#e6edf3; --muted:#9aa7b4; --accent:#4aa3ff; --accent2:#3ddc97;
+    --danger:#ff5d5d; --chip:#222a35;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%;overflow:hidden;background:var(--bg);
+    color:var(--txt);font-family:'Segoe UI',system-ui,-apple-system,'PingFang SC','Microsoft YaHei',sans-serif;
+    -webkit-user-select:none;user-select:none}
+  #app{position:fixed;inset:0}
+  canvas{display:block;outline:none}
+
+  /* loading */
+  #loader{position:fixed;inset:0;display:flex;flex-direction:column;align-items:center;
+    justify-content:center;background:radial-gradient(circle at 50% 35%,#1b2330,#0a0d12);z-index:50;gap:18px}
+  #loader h1{font-size:26px;margin:0;letter-spacing:2px;font-weight:700}
+  #loader h1 span{color:var(--accent)}
+  #bar{width:280px;height:8px;border-radius:6px;background:#222b38;overflow:hidden}
+  #bar > i{display:block;height:100%;width:0%;background:linear-gradient(90deg,var(--accent),var(--accent2));transition:width .2s}
+  #loadmsg{color:var(--muted);font-size:13px;height:16px}
+
+  /* top bar */
+  #topbar{position:fixed;top:10px;left:50%;transform:translateX(-50%);z-index:20;
+    display:flex;gap:8px;align-items:center;background:var(--panel);backdrop-filter:blur(10px);
+    border:1px solid var(--line);border-radius:12px;padding:7px 10px;box-shadow:0 8px 30px #0008}
+  .btn{background:var(--chip);border:1px solid var(--line);color:var(--txt);
+    border-radius:8px;padding:7px 11px;font-size:13px;cursor:pointer;display:flex;align-items:center;gap:6px;
+    transition:.12s;white-space:nowrap}
+  .btn:hover{background:#2c3744;border-color:#3a4658}
+  .btn.primary{background:linear-gradient(180deg,#4aa3ff,#2e85e6);border-color:#2e85e6;color:#fff;font-weight:600}
+  .btn.primary:hover{filter:brightness(1.08)}
+  .btn.danger:hover{background:#3a2226;border-color:var(--danger);color:#ffd0d0}
+  .sep{width:1px;height:22px;background:var(--line);margin:0 2px}
+  #seedbox{display:flex;align-items:center;gap:6px;font-size:12px;color:var(--muted)}
+  #seedInput{width:78px;background:#0c1016;border:1px solid var(--line);color:var(--txt);
+    border-radius:6px;padding:5px 7px;font-size:12px;font-family:ui-monospace,monospace}
+
+  /* palette */
+  #palette{position:fixed;left:10px;top:50%;transform:translateY(-50%);z-index:20;
+    width:230px;max-height:84vh;display:flex;flex-direction:column;background:var(--panel);
+    backdrop-filter:blur(10px);border:1px solid var(--line);border-radius:14px;overflow:hidden;
+    box-shadow:0 10px 40px #0009}
+  #palette .head{padding:10px 12px 6px;font-size:12px;color:var(--muted);letter-spacing:1px;text-transform:uppercase}
+  #tabs{display:flex;flex-wrap:wrap;gap:4px;padding:0 8px 8px;border-bottom:1px solid var(--line)}
+  .tab{font-size:12px;padding:5px 9px;border-radius:7px;cursor:pointer;color:var(--muted);background:transparent;border:1px solid transparent}
+  .tab:hover{background:#222a35}
+  .tab.active{background:var(--accent);color:#04101e;font-weight:700}
+  #subfilter{display:none;gap:5px;flex-wrap:wrap;padding:8px 8px 0}
+  #subfilter.on{display:flex}
+  .subchip{font-size:11px;padding:4px 10px;border-radius:20px;cursor:pointer;color:var(--muted);
+    background:#0e131a;border:1px solid var(--line)}
+  .subchip:hover{background:#222a35}
+  .subchip.active{background:var(--accent2);color:#04130c;font-weight:700;border-color:var(--accent2)}
+  #items{padding:8px;overflow-y:auto;display:grid;grid-template-columns:repeat(3,1fr);gap:6px;align-content:start}
+  #items::-webkit-scrollbar{width:8px}#items::-webkit-scrollbar-thumb{background:#2c3744;border-radius:8px}
+  .item{position:relative;aspect-ratio:1;border-radius:9px;background:#0e131a;border:1px solid var(--line);
+    cursor:pointer;overflow:hidden;display:flex;align-items:center;justify-content:center;transition:.1s}
+  .item:hover{border-color:#3a4658;transform:translateY(-1px)}
+  .item.sel{border-color:var(--accent);box-shadow:0 0 0 2px var(--accent) inset}
+  .item img{width:100%;height:100%;object-fit:contain;image-rendering:auto;pointer-events:none}
+  .item .swatch{width:100%;height:100%}
+  .item .lbl{position:absolute;left:0;right:0;bottom:0;font-size:9px;line-height:1.1;padding:2px 3px;
+    background:#000a;color:#cfd8e3;text-align:center;opacity:0;transition:.1s;pointer-events:none}
+  .item:hover .lbl{opacity:1}
+  .item .badge{position:absolute;top:2px;left:3px;font-size:8px;background:#0008;color:#9fb;padding:1px 4px;border-radius:5px}
+
+  /* HUD */
+  #hud{position:fixed;right:10px;bottom:10px;z-index:20;display:flex;flex-direction:column;gap:8px;align-items:flex-end}
+  #toolchip{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:8px 12px;
+    font-size:13px;display:flex;gap:8px;align-items:center;backdrop-filter:blur(10px)}
+  #toolchip b{color:var(--accent2)}
+  #help{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:9px 12px;
+    font-size:11.5px;color:var(--muted);line-height:1.7;backdrop-filter:blur(10px);max-width:260px}
+  #help kbd{background:#0c1016;border:1px solid var(--line);border-bottom-width:2px;border-radius:5px;
+    padding:0 5px;font-family:ui-monospace,monospace;color:var(--txt);font-size:10.5px}
+  #stats{position:fixed;left:10px;bottom:10px;z-index:20;font-size:11px;color:#56627088;font-family:ui-monospace,monospace}
+  .rotpill{position:fixed;bottom:64px;left:50%;transform:translateX(-50%);z-index:20;background:#000a;
+    border:1px solid var(--line);border-radius:20px;padding:5px 14px;font-size:12px;color:var(--muted);
+    opacity:0;transition:.2s;pointer-events:none}
+  .rotpill.show{opacity:1}
+  @media (max-width:760px){ #help{display:none} #palette{width:180px} }
+</style>
+<script type="importmap">
+{
+  "imports": {
+    "three": "./assets/vendor/three.module.js",
+    "three/addons/loaders/GLTFLoader.js": "./assets/vendor/GLTFLoader.js",
+    "three/addons/utils/BufferGeometryUtils.js": "./assets/vendor/BufferGeometryUtils.js"
+  }
+}
+</script>
+</head>
+<body>
+  <div id="app"></div>
+
+  <div id="loader">
+    <h1>CITY <span>SANDBOX</span></h1>
+    <div id="bar"><i></i></div>
+    <div id="loadmsg">初始化…</div>
+  </div>
+
+  <div id="topbar">
+    <button class="btn primary" id="btnRegen">🎲 重新生成</button>
+    <div id="seedbox">种子 <input id="seedInput" value="" /></div>
+    <div class="sep"></div>
+    <button class="btn" id="btnSave">💾 保存</button>
+    <button class="btn" id="btnLoad">📂 读取</button>
+    <button class="btn" id="btnGrid">▦ 网格</button>
+    <button class="btn danger" id="btnClear">🗑 清空</button>
+  </div>
+
+  <div id="palette">
+    <div class="head">建造调色板</div>
+    <div id="tabs"></div>
+    <div id="subfilter"></div>
+    <div id="items"></div>
+  </div>
+
+  <div id="hud">
+    <div id="toolchip">当前：<b id="toolName">浏览</b></div>
+    <div id="help">
+      <div><kbd>左键</kbd> 放置/涂刷 · 拖动可连续</div>
+      <div><kbd>右键拖</kbd> 旋转视角 · <kbd>中键拖</kbd>/<kbd>空格拖</kbd> 平移</div>
+      <div><kbd>滚轮</kbd> 缩放 · <kbd>WASD</kbd> 移动 · <kbd>Q</kbd>/<kbd>E</kbd> 转向</div>
+      <div><kbd>R</kbd> 旋转物体 · <kbd>X</kbd> 删除工具 · <kbd>Esc</kbd> 取消</div>
+    </div>
+  </div>
+  <div class="rotpill" id="rotpill"></div>
+  <div id="stats"></div>
+
+  <script type="module" src="./src/main.js"></script>
+</body>
+</html>
