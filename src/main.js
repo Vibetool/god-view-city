@@ -65,6 +65,13 @@ async function boot(){
   document.getElementById('btnGrid').onclick = ()=>{
     world._gridOn = !world._gridOn; world.setGridVisible(world._gridOn);
   };
+  const btnSnap = document.getElementById('btnSnap');
+  btnSnap.onclick = ()=>{
+    world.snap = !world.snap;
+    btnSnap.textContent = '⊞ 吸附:' + (world.snap?'开':'关');
+    btnSnap.classList.toggle('primary', world.snap);
+    if (world.snap) world.setGridVisible(true), world._gridOn=true;
+  };
   document.getElementById('btnClear').onclick = ()=>{ if(confirm('清空整个地图？')){ world.clearAll(); updateStats(); } };
   document.getElementById('btnSave').onclick = ()=>{
     try{ localStorage.setItem(SAVE_KEY, JSON.stringify(world.serialize())); toast('已保存 ✓'); }
@@ -74,9 +81,12 @@ async function boot(){
     const raw = localStorage.getItem(SAVE_KEY);
     if (!raw){ toast('没有存档'); return; }
     let data; try{ data=JSON.parse(raw); }catch(e){ toast('存档损坏'); return; }
-    // preload any models referenced in the save
+    // preload any models referenced in the save (v2: [kind,id,...]; v1: [cellKey,kind,id,...])
     const ids = new Set();
-    for (const o of data.objects||[]) if (o[1]==='model' && o[2]) ids.add(o[2]);
+    for (const o of data.objects||[]){
+      if (o.length>=6){ if (o[0]==='model' && o[1]) ids.add(o[1]); }
+      else { if (o[1]==='model' && o[2]) ids.add(o[2]); }
+    }
     await lib.preload([...ids]);
     if (world.deserialize(data)){ seedInput.value = data.seedStr||''; updateStats(); toast('已读取 ✓'); }
     else toast('存档不兼容');

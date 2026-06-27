@@ -35,7 +35,9 @@ export class World {
     this.scene = scene; this.lib = lib; this.GRID = grid;
     this.ground = new Map();     // key -> type
     this.groundMesh = new Map(); // key -> Object3D (non-grass overrides)
-    this.objects = new Map();    // key -> { kind, id?, def?, rot, group }
+    this.objects = new Map();    // oid -> { oid, kind, id?, def?, rot, x, z, group }
+    this._oid = 0;
+    this.snap = false;           // free placement by default ("place where you click")
     this.seed = 1;
 
     this.groundGroup = new THREE.Group();
@@ -96,7 +98,7 @@ export class World {
   }
   getGround(gx,gz){ return this.ground.get(this.key(gx,gz)) || 'grass'; }
 
-  // ----- objects (one per cell) -----
+  // ----- objects (free placement at any world position) -----
   buildObjectGroup(desc){
     let g;
     if (desc.kind === 'building'){
@@ -106,35 +108,48 @@ export class World {
     }
     return g || null;
   }
-  placeObject(gx,gz,desc,rot=0){
-    if (!this.inBounds(gx,gz)) return false;
+  // Add an object at an exact world (x,z). When this.snap is on (or forceSnap),
+  // the position is rounded to the grid cell center; otherwise it's placed freely.
+  addObject(x, z, desc, rot=0, forceSnap=false){
+    if (this.snap || forceSnap){
+      const c = this.worldToCell(x,z);
+      if (!this.inBounds(c.gx,c.gz)) return null;
+      const p = this.cellCenter(c.gx,c.gz); x = p.x; z = p.z;
+    }
     const g = this.buildObjectGroup(desc);
-    if (!g) return false;
-    this.removeAt(gx,gz);
-    const p = this.cellCenter(gx,gz);
-    g.position.set(p.x, 0, p.z);
+    if (!g) return null;
+    g.position.set(x, 0, z);
     g.rotation.y = rot * Math.PI/2;
     this.objectGroup.add(g);
-    const rec = { kind:desc.kind, id:desc.id, def:desc.def, rot, group:g };
-    g.userData.cell = { gx, gz };
-    this.objects.set(this.key(gx,gz), rec);
-    return true;
+    const oid = ++this._oid;
+    const rec = { oid, kind:desc.kind, id:desc.id, def:desc.def, rot, x, z, group:g };
+    g.userData.oid = oid;
+    this.objects.set(oid, rec);
+    return oid;
   }
-  removeAt(gx,gz){
-    const k = this.key(gx,gz);
-    const rec = this.objects.get(k);
+  removeObject(oid){
+    const rec = this.objects.get(oid);
     if (!rec) return false;
     this.objectGroup.remove(rec.group);
     disposeGroup(rec.group);
-    this.objects.delete(k);
+    this.objects.delete(oid);
     return true;
   }
-  hasObject(gx,gz){ return this.objects.has(this.key(gx,gz)); }
+  // Remove the object whose anchor is nearest to (x,z) within radius. Returns bool.
+  removeNearest(x, z, radius=0.7){
+    let best=null, bd=radius*radius;
+    for (const rec of this.objects.values()){
+      const dx=rec.x-x, dz=rec.z-z, d=dx*dx+dz*dz;
+      if (d<=bd){ bd=d; best=rec; }
+    }
+    if (best) return this.removeObject(best.oid);
+    return false;
+  }
 
   setGridVisible(v){ this.grid3.visible = v; }
 
   clearAll(){
-    for (const k of [...this.objects.keys()]){ const [gx,gz]=k.split(',').map(Number); this.removeAt(gx,gz); }
+    for (const oid of [...this.objects.keys()]) this.removeObject(oid);
     for (const k of [...this.ground.keys()]){ const [gx,gz]=k.split(',').map(Number); this.setGround(gx,gz,'grass'); }
   }
 
@@ -174,6 +189,13 @@ export class World {
       for (const [dx,dz,r] of dirs){ const x=gx+dx,z=gz+dz; if(this.inBounds(x,z)&&isRoad(x,z)) return r; }
       return (rng()*4|0);
     };
+    // generation places neatly on the grid: one object per cell, cell-centered
+    const occ = new Set();
+    const place = (gx,gz,desc,rot)=>{
+      const k = gx+','+gz; if (occ.has(k)) return;
+      const p = this.cellCenter(gx,gz);
+      if (this.addObject(p.x, p.z, desc, rot, true) != null) occ.add(k);
+    };
 
     // 3) blocks: buildings vs parks, scattered nature
     for (let gx=0;gx<N;gx++) for (let gz=0;gz<N;gz++){
@@ -194,13 +216,13 @@ export class World {
           const base = 1 + Math.round((1-distC)*3 + (urban-0.5)*3);
           const stories = Math.max(1, Math.min(6, base + (rng()<0.3? 1:0)));
           const roof = stories<=2 ? (rng()<0.6?'slant':'detailed') : 'flat';
-          this.placeObject(gx,gz,{kind:'building',def:{style,stories,roof,door:true}}, roadDirToRot(gx,gz));
+          place(gx,gz,{kind:'building',def:{style,stories,roof,door:true}}, roadDirToRot(gx,gz));
         } else if (isSidewalk){
           // street furniture along sidewalks, sparse
           const r = rng();
-          if (r < 0.05) this.placeObject(gx,gz,{kind:'model',id:'detail-light-single'}, roadDirToRot(gx,gz));
-          else if (r < 0.08) this.placeObject(gx,gz,{kind:'model',id:'detail-bench'}, (roadDirToRot(gx,gz)+2)%4);
-          else if (r < 0.10) this.placeObject(gx,gz,{kind:'model',id:'tree-park-large'}, 0);
+          if (r < 0.05) place(gx,gz,{kind:'model',id:'detail-light-single'}, roadDirToRot(gx,gz));
+          else if (r < 0.08) place(gx,gz,{kind:'model',id:'detail-bench'}, (roadDirToRot(gx,gz)+2)%4);
+          else if (r < 0.10) place(gx,gz,{kind:'model',id:'tree-park-large'}, 0);
         }
       } else {
         // countryside / parks / forest
@@ -208,23 +230,23 @@ export class World {
         if (forest > 0.58 || (distC>0.7 && forest>0.5)){
           if (rng() < 0.55){
             const id = treeIds[rng()*treeIds.length|0];
-            this.placeObject(gx,gz,{kind:'model',id}, rng()*4|0);
+            place(gx,gz,{kind:'model',id}, rng()*4|0);
           }
         } else if (rng() < 0.06){
-          this.placeObject(gx,gz,{kind:'model',id:'tree-shrub'}, rng()*4|0);
+          place(gx,gz,{kind:'model',id:'tree-shrub'}, rng()*4|0);
         } else if (rng() < 0.015){
-          this.placeObject(gx,gz,{kind:'model',id:'grass-hill'}, rng()*4|0);
+          place(gx,gz,{kind:'model',id:'grass-hill'}, rng()*4|0);
         }
       }
     }
 
     // 4) vehicles on some road cells (oriented along the road)
     for (const [gx,gz] of roadCells){
-      if (this.hasObject(gx,gz)) continue;
+      if (occ.has(gx+","+gz)) continue;
       if (rng() < 0.018){
         const along = isRoad(gx,gz+1)||isRoad(gx,gz-1); // vertical road?
         const trucks=['truck-green','truck-grey','truck-flat','truck-green-cargo','truck-grey-cargo'];
-        this.placeObject(gx,gz,{kind:'model',id:trucks[rng()*trucks.length|0]}, along?0:1);
+        place(gx,gz,{kind:'model',id:trucks[rng()*trucks.length|0]}, along?0:1);
       }
     }
     return this.seed;
@@ -234,19 +256,26 @@ export class World {
   // Save / load
   // ----------------------------------------------------------------------
   serialize(){
+    const r3 = n => Math.round(n*1000)/1000;
     const ground=[]; for (const [k,t] of this.ground) ground.push([k,t]);
-    const objects=[]; for (const [k,r] of this.objects)
-      objects.push([k, r.kind, r.id||null, r.def||null, r.rot]);
-    return { v:1, grid:this.GRID, seed:this.seed, seedStr:this.seedStr, ground, objects };
+    const objects=[]; for (const r of this.objects.values())
+      objects.push([r.kind, r.id||null, r.def||null, r.rot, r3(r.x), r3(r.z)]);
+    return { v:2, grid:this.GRID, seed:this.seed, seedStr:this.seedStr, ground, objects };
   }
   deserialize(data){
     if (!data || data.grid!==this.GRID) { return false; }
     this.clearAll();
+    const savedSnap = this.snap; this.snap = false; // restore exact saved positions
     for (const [k,t] of data.ground||[]){ const [gx,gz]=k.split(',').map(Number); this.setGround(gx,gz,t); }
     for (const o of data.objects||[]){
-      const [k,kind,id,def,rot]=o; const [gx,gz]=k.split(',').map(Number);
-      this.placeObject(gx,gz,{kind,id,def},rot);
+      if (o.length>=6){                     // v2: [kind,id,def,rot,x,z]
+        const [kind,id,def,rot,x,z]=o; this.addObject(x,z,{kind,id,def},rot);
+      } else {                              // v1: [cellKey,kind,id,def,rot]
+        const [k,kind,id,def,rot]=o; const [gx,gz]=k.split(',').map(Number);
+        const p=this.cellCenter(gx,gz); this.addObject(p.x,p.z,{kind,id,def},rot);
+      }
     }
+    this.snap = savedSnap;
     this.seed = data.seed||1; this.seedStr = data.seedStr||String(this.seed);
     return true;
   }

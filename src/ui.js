@@ -49,8 +49,10 @@ export function initUI(ctx){
     rot: 0,
     painting: false,
     lastCell: null,
+    lastPos: { x:0, z:0 },
     pointer: { x:-1, y:-1, inside:false },
   };
+  const MIN_DRAG_DIST = 0.7; // min spacing between drag-scattered objects (world units)
   ctx.uiState = state;
 
   // ---------- palette ----------
@@ -167,55 +169,67 @@ export function initUI(ctx){
     ghost.visible = true;
   }
 
-  function applyGhostTransform(gx,gz){
-    const p = world.cellCenter(gx,gz);
+  function ghostPos(hit){
+    if (world.snap){ const p = world.cellCenter(hit.gx,hit.gz); return { x:p.x, z:p.z }; }
+    return { x:hit.x, z:hit.z };
+  }
+  function applyGhostTransform(hit){
+    const p = ghostPos(hit);
     ghost.position.set(p.x,0,p.z);
     ghost.rotation.y = state.rot*Math.PI/2;
   }
 
-  // ---------- raycast to ground ----------
+  // ---------- raycast to ground: free world point + its grid cell ----------
   const ray = new THREE.Raycaster();
   const ndc = new THREE.Vector2();
   const plane = new THREE.Plane(new THREE.Vector3(0,1,0), 0);
-  const hit = new THREE.Vector3();
-  function cellUnderPointer(){
+  const hit3 = new THREE.Vector3();
+  function pointUnderPointer(){
     if (!state.pointer.inside) return null;
     ndc.set((state.pointer.x/innerWidth)*2-1, -(state.pointer.y/innerHeight)*2+1);
     ray.setFromCamera(ndc, camera);
-    if (!ray.ray.intersectPlane(plane, hit)) return null;
-    const c = world.worldToCell(hit.x, hit.z);
+    if (!ray.ray.intersectPlane(plane, hit3)) return null;
+    const c = world.worldToCell(hit3.x, hit3.z);
     if (!world.inBounds(c.gx,c.gz)) return null;
-    return c;
+    return { x:hit3.x, z:hit3.z, gx:c.gx, gz:c.gz };
   }
 
-  // ---------- actions ----------
-  function actAt(gx,gz){
+  // ---------- actions (free placement at the exact clicked point) ----------
+  function act(h){
     const s = state.sel; if (!s) return;
-    if (s.type==='ground') world.setGround(gx,gz,s.ground);
+    if (s.type==='ground') world.setGround(h.gx,h.gz,s.ground);
     else if (s.type==='delete'){
-      if (!world.removeAt(gx,gz)) world.setGround(gx,gz,'grass');
+      if (!world.removeNearest(h.x,h.z,0.7)) world.setGround(h.gx,h.gz,'grass');
     }
-    else if (s.type==='object') world.placeObject(gx,gz,{kind:'model',id:s.id}, state.rot);
-    else if (s.type==='building') world.placeObject(gx,gz,{kind:'building',def:s.def}, state.rot);
+    else if (s.type==='object') world.addObject(h.x,h.z,{kind:'model',id:s.id}, state.rot);
+    else if (s.type==='building') world.addObject(h.x,h.z,{kind:'building',def:s.def}, state.rot);
   }
+  // ground & delete drag by cell; objects scatter by distance; buildings click-only
   const isDragPaint = s => s && (s.type==='ground'||s.type==='delete'||s.type==='object');
+  const isCellTool  = s => s && (s.type==='ground'||s.type==='delete');
 
   // ---------- pointer events (LEFT button = build; camera handles the rest) ----------
   dom.addEventListener('pointermove', e=>{
     state.pointer.x=e.clientX; state.pointer.y=e.clientY; state.pointer.inside=true;
     if (state.painting && state.sel){
-      const c = cellUnderPointer();
-      if (c){ const k=c.gx+','+c.gz; if (k!==state.lastCell){ state.lastCell=k; actAt(c.gx,c.gz); } }
+      const h = pointUnderPointer(); if (!h) return;
+      if (isCellTool(state.sel)){
+        const k=h.gx+','+h.gz; if (k!==state.lastCell){ state.lastCell=k; act(h); }
+      } else { // object scatter: throttle by distance
+        const dx=h.x-state.lastPos.x, dz=h.z-state.lastPos.z;
+        if (dx*dx+dz*dz >= MIN_DRAG_DIST*MIN_DRAG_DIST){ state.lastPos={x:h.x,z:h.z}; act(h); }
+      }
     }
   });
   dom.addEventListener('pointerleave', ()=>{ state.pointer.inside=false; });
   dom.addEventListener('pointerdown', e=>{
     if (e.button!==0 || god.space) return;       // left only; space+left = pan
     if (!state.sel) return;
-    const c = cellUnderPointer(); if (!c) return;
+    const h = pointUnderPointer(); if (!h) return;
     state.painting = isDragPaint(state.sel);
-    state.lastCell = c.gx+','+c.gz;
-    actAt(c.gx,c.gz);
+    state.lastCell = h.gx+','+h.gz;
+    state.lastPos = { x:h.x, z:h.z };
+    act(h);
     if (state.painting){ try{ dom.setPointerCapture(e.pointerId); }catch(_){} }
   });
   const endPaint = e=>{ if (state.painting){ try{dom.releasePointerCapture(e.pointerId);}catch(_){} } state.painting=false; state.lastCell=null; };
@@ -232,21 +246,24 @@ export function initUI(ctx){
   });
   function flashPill(t){ pill.textContent=t; pill.classList.add('show'); pillT=performance.now()+900; }
 
-  function applyGhostFromPointer(){ const c=cellUnderPointer(); if(c) applyGhostTransform(c.gx,c.gz); }
+  function applyGhostFromPointer(){ const h=pointUnderPointer(); if(h) applyGhostTransform(h); }
 
   // ---------- per-frame update ----------
   function update(){
     if (pillT && performance.now()>pillT){ pill.classList.remove('show'); pillT=0; }
-    const c = cellUnderPointer();
+    const h = pointUnderPointer();
     const s = state.sel;
-    if (c && s){
-      if (s.type==='ground' || s.type==='delete'){
-        highlight.visible=true;
-        const p=world.cellCenter(c.gx,c.gz); highlight.position.set(p.x,0.03,p.z);
-        highlight.material.color.set(s.type==='delete'?0xff5d5d:0x4aa3ff);
-        ghost.visible=false;
+    if (h && s){
+      if (s.type==='ground'){               // grid-snapped tile highlight
+        highlight.visible=true; ghost.visible=false;
+        const p=world.cellCenter(h.gx,h.gz); highlight.position.set(p.x,0.03,p.z);
+        highlight.material.color.set(0x4aa3ff);
+      } else if (s.type==='delete'){         // free cursor marker (delete radius)
+        highlight.visible=true; ghost.visible=false;
+        highlight.position.set(h.x,0.03,h.z);
+        highlight.material.color.set(0xff5d5d);
       } else if (ghost.children.length){
-        highlight.visible=false; ghost.visible=true; applyGhostTransform(c.gx,c.gz);
+        highlight.visible=false; ghost.visible=true; applyGhostTransform(h);
       }
     } else {
       ghost.visible=false; highlight.visible=false;
