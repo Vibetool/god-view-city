@@ -3,6 +3,7 @@ import { createEngine, ModelLibrary } from './engine.js';
 import { MODELS } from './manifest.js';
 import { World, GROUND_MODEL } from './world.js';
 import { buildingModelIds } from './buildings.js';
+import { Traffic } from './traffic.js';
 import { initUI } from './ui.js';
 
 const SAVE_KEY = 'citysandbox.save.v1';
@@ -36,7 +37,8 @@ async function boot(){
   const world = new World(eng.scene, lib, GRID);
   const uictx = { ...eng, world, lib };
   const ui = initUI(uictx);
-  window.GAME = { eng, world, lib, ui, ctx: uictx };
+  const traffic = new Traffic(world);
+  window.GAME = { eng, world, lib, ui, traffic, ctx: uictx };
 
   // sun target follows camera focus a bit (keeps shadows centered)
   const seedInput = document.getElementById('seedInput');
@@ -72,6 +74,12 @@ async function boot(){
     btnSnap.classList.toggle('primary', world.snap);
     if (world.snap) world.setGridVisible(true), world._gridOn=true;
   };
+  const btnTraffic = document.getElementById('btnTraffic');
+  btnTraffic.onclick = ()=>{
+    traffic.enabled = !traffic.enabled;
+    btnTraffic.textContent = '🚗 行驶:' + (traffic.enabled?'开':'关');
+    btnTraffic.classList.toggle('primary', traffic.enabled);
+  };
   document.getElementById('btnClear').onclick = ()=>{ if(confirm('清空整个地图？')){ world.clearAll(); updateStats(); } };
   document.getElementById('btnSave').onclick = ()=>{
     try{ localStorage.setItem(SAVE_KEY, JSON.stringify(world.serialize())); toast('已保存 ✓'); }
@@ -98,6 +106,7 @@ async function boot(){
   function frame(){
     const dt = Math.min(clock.getDelta(), 0.05);
     eng.god.update(dt);
+    traffic.update(dt);
     // keep sun/shadow box centered on view target
     eng.sun.position.set(eng.god.target.x+34, 52, eng.god.target.z+22);
     eng.sun.target.position.copy(eng.god.target); eng.sun.target.updateMatrixWorld();

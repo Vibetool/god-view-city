@@ -97,6 +97,18 @@ export class World {
     this.groundMesh.set(k, mesh);
   }
   getGround(gx,gz){ return this.ground.get(this.key(gx,gz)) || 'grass'; }
+  isAsphalt(gx,gz){ return this.inBounds(gx,gz) && this.ground.get(this.key(gx,gz))==='asphalt'; }
+  // nearest cell of a given ground type to world point (x,z); returns {gx,gz} or null
+  nearestGround(x,z,type){
+    let best=null, bd=Infinity;
+    for (const [k,t] of this.ground){
+      if (t!==type) continue;
+      const [gx,gz]=k.split(',').map(Number);
+      const c=this.cellCenter(gx,gz); const dx=c.x-x, dz=c.z-z, d=dx*dx+dz*dz;
+      if (d<bd){ bd=d; best={gx,gz}; }
+    }
+    return best;
+  }
 
   // ----- objects (free placement at any world position) -----
   buildObjectGroup(desc){
