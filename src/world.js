@@ -35,9 +35,10 @@ export class World {
     this.scene = scene; this.lib = lib; this.GRID = grid;
     this.ground = new Map();     // key -> type
     this.groundMesh = new Map(); // key -> Object3D (non-grass overrides)
-    this.objects = new Map();    // oid -> { oid, kind, id?, def?, rot, x, z, group }
+    this.objects = new Map();    // oid -> { oid, kind, id?, def?, rot, x, z, y, w, d, h, group }
     this._oid = 0;
     this.snap = false;           // free placement by default ("place where you click")
+    this.blocked = new Map();    // cellKey -> count of static (non-driving) objects on it
     this.seed = 1;
 
     this.groundGroup = new THREE.Group();
@@ -98,12 +99,14 @@ export class World {
   }
   getGround(gx,gz){ return this.ground.get(this.key(gx,gz)) || 'grass'; }
   isAsphalt(gx,gz){ return this.inBounds(gx,gz) && this.ground.get(this.key(gx,gz))==='asphalt'; }
-  // nearest cell of a given ground type to world point (x,z); returns {gx,gz} or null
-  nearestGround(x,z,type){
+  // nearest cell of a given ground type to world point (x,z); returns {gx,gz} or null.
+  // avoidBlocked skips cells carrying a static obstacle (used for car re-approach).
+  nearestGround(x,z,type,avoidBlocked=false){
     let best=null, bd=Infinity;
     for (const [k,t] of this.ground){
       if (t!==type) continue;
       const [gx,gz]=k.split(',').map(Number);
+      if (avoidBlocked && this.isBlocked(gx,gz)) continue;
       const c=this.cellCenter(gx,gz); const dx=c.x-x, dz=c.z-z, d=dx*dx+dz*dz;
       if (d<bd){ bd=d; best={gx,gz}; }
     }
@@ -120,9 +123,47 @@ export class World {
     }
     return g || null;
   }
-  // Add an object at an exact world (x,z). When this.snap is on (or forceSnap),
-  // the position is rounded to the grid cell center; otherwise it's placed freely.
-  addObject(x, z, desc, rot=0, forceSnap=false){
+  // is this a self-driving vehicle (a truck with a cab, not a bare container)?
+  isDrivable(rec){ return rec.kind==='model' && rec.id && rec.id.startsWith('truck') && !rec.id.endsWith('-cargo'); }
+
+  // footprint + height of an object to be placed
+  descMetrics(desc){
+    if (desc.kind==='building'){
+      const st = Math.max(1, Math.min(desc.def?.stories||2, 6));
+      return { w:1, d:1, h: st + 0.5 };
+    }
+    const m = this.lib.byId.get(desc.id);
+    return m ? { w:m.w||1, d:m.d||1, h:m.h||1 } : { w:1, d:1, h:1 };
+  }
+  // highest resting surface at (x,z): top of the tallest static object whose
+  // footprint covers the point (rotation-aware box; moving vehicles don't count).
+  supportHeightAt(x, z){
+    let top = 0;
+    for (const rec of this.objects.values()){
+      if (this.isDrivable(rec)) continue;                 // a moving truck is not a surface
+      const odd = ((rec.rot||0) & 1) === 1;               // 90°/270° swap footprint
+      const ew = (odd ? (rec.d||1) : (rec.w||1)) / 2;
+      const ed = (odd ? (rec.w||1) : (rec.d||1)) / 2;
+      if (Math.abs(rec.x-x) <= ew && Math.abs(rec.z-z) <= ed){
+        const t = (rec.y||0) + (rec.h||1);
+        if (t > top) top = t;
+      }
+    }
+    return top;
+  }
+  _markBlocked(rec, delta){
+    if (this.isDrivable(rec)) return;           // moving vehicles don't block the road
+    const c = this.worldToCell(rec.x, rec.z);
+    if (!this.inBounds(c.gx,c.gz)) return;
+    const k = this.key(c.gx,c.gz);
+    const n = (this.blocked.get(k)||0) + delta;
+    if (n <= 0) this.blocked.delete(k); else this.blocked.set(k, n);
+  }
+  isBlocked(gx,gz){ return (this.blocked.get(this.key(gx,gz))||0) > 0; }
+
+  // Add an object at an exact world (x,z). Snaps to cell center when snapping is on
+  // (or forceSnap). It rests on top of whatever is already there (fixedY overrides).
+  addObject(x, z, desc, rot=0, forceSnap=false, fixedY=null){
     if (this.snap || forceSnap){
       const c = this.worldToCell(x,z);
       if (!this.inBounds(c.gx,c.gz)) return null;
@@ -130,29 +171,36 @@ export class World {
     }
     const g = this.buildObjectGroup(desc);
     if (!g) return null;
-    g.position.set(x, 0, z);
+    const m = this.descMetrics(desc);
+    const y = (fixedY!=null) ? fixedY : this.supportHeightAt(x, z);
+    g.position.set(x, y, z);
     g.rotation.y = rot * Math.PI/2;
     this.objectGroup.add(g);
     const oid = ++this._oid;
-    const rec = { oid, kind:desc.kind, id:desc.id, def:desc.def, rot, x, z, group:g };
+    const rec = { oid, kind:desc.kind, id:desc.id, def:desc.def, rot, x, z, y, w:m.w, d:m.d, h:m.h, group:g };
     g.userData.oid = oid;
     this.objects.set(oid, rec);
+    this._markBlocked(rec, +1);
     return oid;
   }
   removeObject(oid){
     const rec = this.objects.get(oid);
     if (!rec) return false;
+    this._markBlocked(rec, -1);
     this.objectGroup.remove(rec.group);
     disposeGroup(rec.group);
     this.objects.delete(oid);
     return true;
   }
-  // Remove the object whose anchor is nearest to (x,z) within radius. Returns bool.
+  // Remove the object under (x,z): nearest first; for a true stack (same spot)
+  // the topmost is removed first.
   removeNearest(x, z, radius=0.7){
-    let best=null, bd=radius*radius;
+    let best=null, bestD=Infinity, bestY=-1;
     for (const rec of this.objects.values()){
       const dx=rec.x-x, dz=rec.z-z, d=dx*dx+dz*dz;
-      if (d<=bd){ bd=d; best=rec; }
+      if (d > radius*radius) continue;
+      const y = rec.y||0;
+      if (!best || d < bestD || (d===bestD && y > bestY)){ best=rec; bestD=d; bestY=y; }
     }
     if (best) return this.removeObject(best.oid);
     return false;
@@ -163,6 +211,7 @@ export class World {
   clearAll(){
     for (const oid of [...this.objects.keys()]) this.removeObject(oid);
     for (const k of [...this.ground.keys()]){ const [gx,gz]=k.split(',').map(Number); this.setGround(gx,gz,'grass'); }
+    this.blocked.clear();
   }
 
   // ----------------------------------------------------------------------
@@ -270,8 +319,8 @@ export class World {
     const r3 = n => Math.round(n*1000)/1000;
     const ground=[]; for (const [k,t] of this.ground) ground.push([k,t]);
     const objects=[]; for (const r of this.objects.values())
-      objects.push([r.kind, r.id||null, r.def||null, r.rot, r3(r.x), r3(r.z)]);
-    return { v:2, grid:this.GRID, seed:this.seed, seedStr:this.seedStr, ground, objects };
+      objects.push([r.kind, r.id||null, r.def||null, r.rot, r3(r.x), r3(r.z), r3(r.y||0)]);
+    return { v:3, grid:this.GRID, seed:this.seed, seedStr:this.seedStr, ground, objects };
   }
   deserialize(data){
     if (!data || data.grid!==this.GRID) { return false; }
@@ -279,8 +328,8 @@ export class World {
     const savedSnap = this.snap; this.snap = false; // restore exact saved positions
     for (const [k,t] of data.ground||[]){ const [gx,gz]=k.split(',').map(Number); this.setGround(gx,gz,t); }
     for (const o of data.objects||[]){
-      if (o.length>=6){                     // v2: [kind,id,def,rot,x,z]
-        const [kind,id,def,rot,x,z]=o; this.addObject(x,z,{kind,id,def},rot);
+      if (o.length>=6){                     // v2/v3: [kind,id,def,rot,x,z,(y)]
+        const [kind,id,def,rot,x,z,y]=o; this.addObject(x,z,{kind,id,def},rot,false, (y!=null?y:null));
       } else {                              // v1: [cellKey,kind,id,def,rot]
         const [k,kind,id,def,rot]=o; const [gx,gz]=k.split(',').map(Number);
         const p=this.cellCenter(gx,gz); this.addObject(p.x,p.z,{kind,id,def},rot);

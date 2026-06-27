@@ -10,7 +10,7 @@ export class Traffic {
     this.facingOffset = Math.PI; // Kenney truck cab sits at -Z; flip so the cab leads
   }
   // drivable vehicles: trucks with a cab, NOT bare shipping containers (*-cargo)
-  isTruck(rec){ return rec.kind==='model' && rec.id && rec.id.startsWith('truck') && !rec.id.endsWith('-cargo'); }
+  isTruck(rec){ return this.world.isDrivable(rec); }
 
   // keep car states in sync with the trucks currently in the world
   reconcile(){
@@ -37,16 +37,21 @@ export class Traffic {
     this.reconcile();
     if (!this.enabled) return;
     if (dt > 0.1) dt = 0.1; // avoid big jumps after tab was inactive
-    for (const s of this.cars.values()) this._drive(s, dt);
+    // occupancy = every car's current cell + the cell it's currently driving into
+    const occ = new Map();
+    for (const s of this.cars.values()) if (s.hasCell) occ.set(s.gx+','+s.gz, s.oid);
+    for (const s of this.cars.values()) if (s.hasCell && s.hasNext) occ.set(s.ngx+','+s.ngz, s.oid);
+    const cars = [...this.cars.values()];
+    for (const s of cars) this._drive(s, dt, occ, cars);
   }
 
-  _drive(s, dt){
+  _drive(s, dt, occ, cars){
     const w = this.world, g = s.group;
 
     // (1) not yet on a road: drive straight toward the nearest asphalt cell
     if (!s.hasCell){
-      const near = w.nearestGround(g.position.x, g.position.z, 'asphalt');
-      if (!near) return;                      // no roads exist -> idle
+      const near = w.nearestGround(g.position.x, g.position.z, 'asphalt', true); // skip blocked cells
+      if (!near) return;                      // no free road exists -> idle
       const c = w.cellCenter(near.gx, near.gz);
       const dx = c.x-g.position.x, dz = c.z-g.position.z, dist = Math.hypot(dx,dz);
       if (dist < 0.06){
@@ -60,15 +65,16 @@ export class Traffic {
       this._syncRec(s); return;
     }
 
-    // car left the road (e.g. its cell was repainted)? -> re-approach
-    if (!w.isAsphalt(s.gx, s.gz)){ s.hasCell=false; s.hasNext=false; return; }
+    // left the road, or an obstacle landed on the car's cell -> re-approach a free road
+    if (!w.isAsphalt(s.gx, s.gz) || w.isBlocked(s.gx, s.gz)){ s.hasCell=false; s.hasNext=false; return; }
 
-    // (2) choose next road cell (random route, avoid immediate U-turn)
+    // (2) choose next road cell: random route, skip obstacles & other cars
     if (!s.hasNext){
-      const nb = this._roadNeighbors(s.gx, s.gz, s.fx, s.fz);
-      if (nb.length === 0) return;             // isolated cell -> idle
+      const nb = this._roadNeighbors(s.gx, s.gz, s.fx, s.fz, s.oid, occ, cars);
+      if (nb.length === 0) return;             // blocked all around -> wait this frame
       const pick = nb[(Math.random()*nb.length)|0];
       s.ngx=pick[0]; s.ngz=pick[1]; s.t=0; s.hasNext=true;
+      occ.set(s.ngx+','+s.ngz, s.oid);         // reserve so later cars this frame avoid it
     }
 
     // (3) advance along the current segment (cells are 1 unit apart)
@@ -95,16 +101,28 @@ export class Traffic {
     s.group.rotation.y = s.yaw;
   }
 
-  _roadNeighbors(gx, gz, fx, fz){
+  _roadNeighbors(gx, gz, fx, fz, oid, occ, cars){
     const w = this.world;
     const dirs = [[1,0],[-1,0],[0,1],[0,-1]];
+    const GAP2 = 1.5*1.5; // keep ~2-cell spacing so full-length trucks never overlap
+    const free = (x,z)=>{
+      if (!w.isAsphalt(x,z) || w.isBlocked(x,z)) return false;
+      if (occ.has(x+','+z) && occ.get(x+','+z)!==oid) return false; // another car's cell/target
+      const c = w.cellCenter(x,z);                                  // keep a gap from other cars
+      for (const o of cars){
+        if (o.oid===oid) continue;
+        const dx=o.group.position.x-c.x, dz=o.group.position.z-c.z;
+        if (dx*dx+dz*dz < GAP2) return false;
+      }
+      return true;
+    };
     const out = [];
     for (const [dx,dz] of dirs){
       const x=gx+dx, z=gz+dz;
-      if (w.isAsphalt(x,z) && !(x===fx && z===fz)) out.push([x,z]);
+      if (free(x,z) && !(x===fx && z===fz)) out.push([x,z]);
     }
-    if (out.length===0){                       // dead end: U-turn allowed
-      for (const [dx,dz] of dirs){ const x=gx+dx,z=gz+dz; if (w.isAsphalt(x,z)) out.push([x,z]); }
+    if (out.length===0){                       // dead end / blocked ahead: U-turn allowed
+      for (const [dx,dz] of dirs){ const x=gx+dx,z=gz+dz; if (free(x,z)) out.push([x,z]); }
     }
     return out;
   }

@@ -175,7 +175,12 @@ export function initUI(ctx){
   }
   function applyGhostTransform(hit){
     const p = ghostPos(hit);
-    ghost.position.set(p.x,0,p.z);
+    let y = 0;
+    const s = state.sel;
+    if (s && (s.type==='object' || s.type==='building')){
+      y = world.supportHeightAt(p.x, p.z); // preview the stack height
+    }
+    ghost.position.set(p.x, y, p.z);
     ghost.rotation.y = state.rot*Math.PI/2;
   }
 
