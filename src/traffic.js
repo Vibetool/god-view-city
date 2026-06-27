@@ -9,7 +9,8 @@ export class Traffic {
     this.speed = 2.2;          // base speed, cells/sec
     this.facingOffset = Math.PI; // Kenney truck cab sits at -Z; flip so the cab leads
   }
-  isTruck(rec){ return rec.kind==='model' && rec.id && rec.id.startsWith('truck'); }
+  // drivable vehicles: trucks with a cab, NOT bare shipping containers (*-cargo)
+  isTruck(rec){ return rec.kind==='model' && rec.id && rec.id.startsWith('truck') && !rec.id.endsWith('-cargo'); }
 
   // keep car states in sync with the trucks currently in the world
   reconcile(){

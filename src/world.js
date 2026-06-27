@@ -246,9 +246,8 @@ export class World {
           }
         } else if (rng() < 0.06){
           place(gx,gz,{kind:'model',id:'tree-shrub'}, rng()*4|0);
-        } else if (rng() < 0.015){
-          place(gx,gz,{kind:'model',id:'grass-hill'}, rng()*4|0);
         }
+        // (no auto slopes/hills — terrain stays flat)
       }
     }
 
@@ -257,7 +256,7 @@ export class World {
       if (occ.has(gx+","+gz)) continue;
       if (rng() < 0.018){
         const along = isRoad(gx,gz+1)||isRoad(gx,gz-1); // vertical road?
-        const trucks=['truck-green','truck-grey','truck-flat','truck-green-cargo','truck-grey-cargo'];
+        const trucks=['truck-green','truck-grey','truck-flat']; // no containers (*-cargo)
         place(gx,gz,{kind:'model',id:trucks[rng()*trucks.length|0]}, along?0:1);
       }
     }
