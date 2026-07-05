@@ -1,10 +1,20 @@
+import * as THREE from 'three';
+
 // Vehicle AI: trucks find the nearest asphalt road, then roam the road network
 // on random routes. They never leave asphalt cells.
+// Traffic lights (detail-light-traffic) cycle 10s red -> 10s green forever;
+// on red, cars may not ENTER the 4 cells orthogonally adjacent to the light
+// (cars already inside may leave, so nobody gets trapped in the junction).
+
+const LIGHT_ID = 'detail-light-traffic';
+const RED_S = 10, GREEN_S = 10, CYCLE_S = RED_S + GREEN_S;
 
 export class Traffic {
   constructor(world){
     this.world = world;
     this.cars = new Map();     // oid -> car state
+    this.lights = new Map();   // oid -> { rec, elapsed, indicator }
+    this.redCells = new Set(); // cell keys cars must not enter right now
     this.enabled = true;
     this.speed = 2.2;          // base speed, cells/sec
     this.facingOffset = Math.PI; // Kenney truck cab sits at -Z; flip so the cab leads
@@ -12,15 +22,33 @@ export class Traffic {
   // drivable vehicles: trucks with a cab, NOT bare shipping containers (*-cargo)
   isTruck(rec){ return this.world.isDrivable(rec); }
 
-  // keep car states in sync with the trucks currently in the world
+  // keep car and traffic-light states in sync with the world's objects
   reconcile(){
     const w = this.world;
     for (const rec of w.objects.values()){
       if (this.isTruck(rec) && !this.cars.has(rec.oid)) this.cars.set(rec.oid, this._init(rec));
+      if (rec.id === LIGHT_ID && !this.lights.has(rec.oid)) this.lights.set(rec.oid, this._initLight(rec));
     }
     for (const oid of [...this.cars.keys()]){
       if (!w.objects.has(oid)) this.cars.delete(oid);
     }
+    for (const oid of [...this.lights.keys()]){
+      if (!w.objects.has(oid)){ this._disposeLight(this.lights.get(oid)); this.lights.delete(oid); }
+    }
+  }
+  _initLight(rec){
+    // glowing phase indicator floating above the light pole
+    const ind = new THREE.Mesh(
+      new THREE.SphereGeometry(0.09, 12, 8),
+      new THREE.MeshBasicMaterial({ color: 0xff3b30 }));
+    ind.position.set(rec.x, (rec.y||0) + (rec.h||1) + 0.16, rec.z);
+    this.world.scene.add(ind);
+    return { rec, elapsed: 0, indicator: ind }; // starts red
+  }
+  _disposeLight(L){
+    if (!L || !L.indicator) return;
+    this.world.scene.remove(L.indicator);
+    L.indicator.geometry.dispose(); L.indicator.material.dispose();
   }
   _init(rec){
     return {
@@ -35,8 +63,20 @@ export class Traffic {
 
   update(dt){
     this.reconcile();
-    if (!this.enabled) return;
     if (dt > 0.1) dt = 0.1; // avoid big jumps after tab was inactive
+    // tick traffic lights (10s red -> 10s green, repeating) and rebuild red set
+    this.redCells.clear();
+    for (const L of this.lights.values()){
+      L.elapsed = (L.elapsed + dt) % CYCLE_S;
+      const red = L.elapsed < RED_S;
+      L.indicator.material.color.setHex(red ? 0xff3b30 : 0x2ecc40);
+      if (red){
+        const c = this.world.worldToCell(L.rec.x, L.rec.z);
+        this.redCells.add((c.gx+1)+','+c.gz); this.redCells.add((c.gx-1)+','+c.gz);
+        this.redCells.add(c.gx+','+(c.gz+1)); this.redCells.add(c.gx+','+(c.gz-1));
+      }
+    }
+    if (!this.enabled) return;
     // occupancy = every car's current cell + the cell it's currently driving into
     const occ = new Map();
     for (const s of this.cars.values()) if (s.hasCell) occ.set(s.gx+','+s.gz, s.oid);
@@ -79,6 +119,12 @@ export class Traffic {
 
     // (3) advance along the current segment (cells are 1 unit apart)
     const a = w.cellCenter(s.gx, s.gz), b = w.cellCenter(s.ngx, s.ngz);
+    // red light ahead: hold at the stop line until green (cars mid-crossing continue)
+    if (s.t === 0 && this.redCells.has(s.ngx+','+s.ngz)){
+      this._faceTo(s, b.x-a.x, b.z-a.z, dt);   // face the light while waiting
+      this._syncRec(s);
+      return;
+    }
     s.t += s.speed * dt;
     if (s.t >= 1){
       g.position.set(b.x, 0, b.z);

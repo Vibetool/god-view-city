@@ -28,7 +28,7 @@ async function boot(){
     ...buildingModelIds(),
     'tree-large','tree-small','tree-pine-large','tree-pine-small',
     'tree-park-large','tree-park-pine-large','tree-shrub','grass-hill',
-    'detail-light-single','detail-bench',
+    'detail-light-single','detail-light-traffic','detail-bench',
     'truck-green','truck-grey','truck-flat','truck-green-cargo','truck-grey-cargo',
   ]);
   await lib.preload([...preload], (d,t)=> setProgress(0.05 + 0.8*(d/t), `加载模型 ${d}/${t}`));
