@@ -3,6 +3,15 @@ import { CELL } from './engine.js';
 import { mulberry32, ValueNoise2D, hashStringToSeed } from './noise.js';
 import { buildBuilding, WALL_STYLES, ROOF_KINDS } from './buildings.js';
 
+// Fixed global street grid. The buildable area's roads align to it, and it
+// continues infinitely beyond the buildable area (drawn by a shader, driven on
+// by cars). A cell is a road when its x-index OR z-index is a multiple of STEP.
+export const ROAD_STEP = 7;
+export function isRoadCellGlobal(gx, gz){
+  return (((gx % ROAD_STEP) + ROAD_STEP) % ROAD_STEP) === 0
+      || (((gz % ROAD_STEP) + ROAD_STEP) % ROAD_STEP) === 0;
+}
+
 // ground type -> model id (null = base grass / special)
 export const GROUND_MODEL = {
   grass:    null,
@@ -45,15 +54,54 @@ export class World {
     this.objectGroup = new THREE.Group();
     scene.add(this.groundGroup, this.objectGroup);
 
-    // base grass plane
+    // base grass plane — huge and camera-following, so the ground looks infinite
+    // (its far edge always sits inside the fog). Objects are still confined to the
+    // original grid; everything beyond the border is just open ground.
+    const GROUND = 600;
     const tex = makeGrassTexture();
-    tex.repeat.set(grid, grid);
+    tex.repeat.set(GROUND, GROUND);
     const mat = new THREE.MeshStandardMaterial({ map:tex, roughness:1, metalness:0 });
-    const plane = new THREE.Mesh(new THREE.PlaneGeometry(grid*CELL, grid*CELL), mat);
+    const plane = new THREE.Mesh(new THREE.PlaneGeometry(GROUND, GROUND), mat);
     plane.rotation.x = -Math.PI/2; plane.receiveShadow = true; plane.position.y = 0;
     plane.name = 'baseGround';
     this.basePlane = plane;
     scene.add(plane);
+
+    // infinite street-grid overlay. World-space (grid stays put as the plane
+    // follows the camera); it aligns to isRoadCellGlobal so it continues the
+    // buildable area's roads. Inside the grid, real road tiles sit on top of it.
+    const gridMat = new THREE.ShaderMaterial({
+      transparent: true, depthWrite: false,
+      uniforms: { uStep:{ value:ROAD_STEP }, uOff:{ value:grid/2 } },
+      vertexShader: `varying vec3 vW;
+        void main(){ vW=(modelMatrix*vec4(position,1.0)).xyz;
+          gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0); }`,
+      // outputs a fixed screen-space colour (ShaderMaterial bypasses tone/colour
+      // management, so we write the final sRGB grey directly)
+      fragmentShader: `varying vec3 vW; uniform float uStep; uniform float uOff;
+        void main(){
+          float rx=mod(floor(vW.x+uOff), uStep);
+          float rz=mod(floor(vW.z+uOff), uStep);
+          if (rx>0.5 && rz>0.5) discard;   // not a road cell -> reveal grass below
+          gl_FragColor=vec4(0.16, 0.175, 0.205, 1.0);
+        }`
+    });
+    const gridPlane = new THREE.Mesh(new THREE.PlaneGeometry(GROUND, GROUND), gridMat);
+    gridPlane.rotation.x = -Math.PI/2; gridPlane.position.y = 0.006;
+    gridPlane.name = 'roadGrid'; gridPlane.renderOrder = 1;
+    this.roadGrid = gridPlane;
+    scene.add(gridPlane);
+
+    // buildable-area border ring: you can only place things inside the original grid
+    const half = grid*CELL/2;
+    const bpts = [[-half,-half],[half,-half],[half,half],[-half,half],[-half,-half]]
+      .map(([x,z])=> new THREE.Vector3(x, 0.05, z));
+    const border = new THREE.Line(
+      new THREE.BufferGeometry().setFromPoints(bpts),
+      new THREE.LineBasicMaterial({ color:0xffffff, transparent:true, opacity:0.28 }));
+    border.name = 'buildBorder';
+    this.border = border;
+    scene.add(border);
 
     // grid helper
     this.grid3 = new THREE.GridHelper(grid*CELL, grid, 0x2c3a22, 0x2c3a22);
@@ -98,7 +146,12 @@ export class World {
     this.groundMesh.set(k, mesh);
   }
   getGround(gx,gz){ return this.ground.get(this.key(gx,gz)) || 'grass'; }
-  isAsphalt(gx,gz){ return this.inBounds(gx,gz) && this.ground.get(this.key(gx,gz))==='asphalt'; }
+  isAsphalt(gx,gz){
+    // inside the buildable area: use the (editable) ground map; outside: the
+    // infinite street grid, so cars can drive out onto it.
+    if (this.inBounds(gx,gz)) return this.ground.get(this.key(gx,gz))==='asphalt';
+    return isRoadCellGlobal(gx,gz);
+  }
   // nearest cell of a given ground type to world point (x,z); returns {gx,gz} or null.
   // avoidBlocked skips cells carrying a static obstacle (used for car re-approach).
   nearestGround(x,z,type,avoidBlocked=false){
@@ -207,6 +260,12 @@ export class World {
   }
 
   setGridVisible(v){ this.grid3.visible = v; }
+  // keep the infinite ground + street grid centered under the camera focus
+  followGround(target){
+    const x = target.x, z = target.z;
+    if (this.basePlane){ this.basePlane.position.x = x; this.basePlane.position.z = z; }
+    if (this.roadGrid){ this.roadGrid.position.x = x; this.roadGrid.position.z = z; }
+  }
 
   clearAll(){
     for (const oid of [...this.objects.keys()]) this.removeObject(oid);
@@ -227,10 +286,9 @@ export class World {
     const N = this.GRID;
     const cx = N/2, cz = N/2;
 
-    // 1) road grid
-    const step = 6 + (rng()*3|0);             // block size
-    const offX = rng()*step|0, offZ = rng()*step|0;
-    const isRoad = (gx,gz)=> ((gx+offX)%step===0) || ((gz+offZ)%step===0);
+    // 1) road grid — aligned to the fixed global street grid so it continues
+    //    seamlessly into the infinite area beyond the buildable region
+    const isRoad = (gx,gz)=> isRoadCellGlobal(gx,gz);
     const roadCells = [];
     for (let gx=0;gx<N;gx++) for (let gz=0;gz<N;gz++){
       if (isRoad(gx,gz)){ this.setGround(gx,gz,'asphalt'); roadCells.push([gx,gz]); }

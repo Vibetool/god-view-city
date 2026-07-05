@@ -115,6 +115,7 @@ async function boot(){
   function frame(){
     const dt = Math.min(clock.getDelta(), 0.05);
     eng.god.update(dt);
+    world.followGround(eng.god.target); // keep infinite ground/grid under the camera
     traffic.update(dt);
     daynight.update(dt, eng.god.target); // advance time; drive sun/sky/fog/exposure
     ui.update();
