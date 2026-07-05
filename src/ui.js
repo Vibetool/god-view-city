@@ -214,6 +214,7 @@ export function initUI(ctx){
 
   // ---------- pointer events (LEFT button = build; camera handles the rest) ----------
   dom.addEventListener('pointermove', e=>{
+    if (e.pointerType==='touch') return;       // touch handled by TouchControls
     state.pointer.x=e.clientX; state.pointer.y=e.clientY; state.pointer.inside=true;
     if (state.painting && state.sel){
       const h = pointUnderPointer(); if (!h) return;
@@ -227,6 +228,7 @@ export function initUI(ctx){
   });
   dom.addEventListener('pointerleave', ()=>{ state.pointer.inside=false; });
   dom.addEventListener('pointerdown', e=>{
+    if (e.pointerType==='touch') return;         // touch handled by TouchControls
     if (e.button!==0 || god.space) return;       // left only; space+left = pan
     if (!state.sel) return;
     const h = pointUnderPointer(); if (!h) return;
@@ -236,7 +238,7 @@ export function initUI(ctx){
     act(h);
     if (state.painting){ try{ dom.setPointerCapture(e.pointerId); }catch(_){} }
   });
-  const endPaint = e=>{ if (state.painting){ try{dom.releasePointerCapture(e.pointerId);}catch(_){} } state.painting=false; state.lastCell=null; };
+  const endPaint = e=>{ if (e.pointerType==='touch') return; if (state.painting){ try{dom.releasePointerCapture(e.pointerId);}catch(_){} } state.painting=false; state.lastCell=null; };
   dom.addEventListener('pointerup', endPaint);
   dom.addEventListener('pointercancel', endPaint);
 
@@ -244,13 +246,21 @@ export function initUI(ctx){
   const pill = $('#rotpill'); let pillT=0;
   window.addEventListener('keydown', e=>{
     if (e.target.tagName==='INPUT') return;
-    if (e.code==='KeyR'){ state.rot=(state.rot+1)%4; applyGhostFromPointer(); flashPill('朝向 '+(state.rot*90)+'°'); }
+    if (e.code==='KeyR'){ rotate(); }
     else if (e.code==='KeyX'){ activeCat='erase'; renderTabs(); renderItems(); setSel({type:'delete',name:'删除'}); }
-    else if (e.code==='Escape'){ setSel(null); markSel('__none__'); }
+    else if (e.code==='Escape'){ cancel(); }
   });
   function flashPill(t){ pill.textContent=t; pill.classList.add('show'); pillT=performance.now()+900; }
 
   function applyGhostFromPointer(){ const h=pointUnderPointer(); if(h) applyGhostTransform(h); }
+
+  // shared actions (keyboard + mobile buttons + touch tap)
+  function rotate(){ state.rot=(state.rot+1)%4; applyGhostFromPointer(); flashPill('朝向 '+(state.rot*90)+'°'); }
+  function cancel(){ setSel(null); markSel('__none__'); }
+  function tapAt(cx, cy){ // place/erase/paint at a screen point (mobile tap)
+    state.pointer.x=cx; state.pointer.y=cy; state.pointer.inside=true;
+    const h=pointUnderPointer(); if(h) act(h);
+  }
 
   // ---------- per-frame update ----------
   function update(){
@@ -274,7 +284,7 @@ export function initUI(ctx){
     }
   }
 
-  return { update, setSel, renderItems };
+  return { update, setSel, renderItems, tapAt, rotate, cancel };
 }
 
 function makeHighlight(){

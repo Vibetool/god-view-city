@@ -2,7 +2,7 @@
 <html lang="zh">
 <head>
 <meta charset="UTF-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
 <title>City Sandbox · 上帝视角沙盒建造</title>
 <style>
   :root{
@@ -15,7 +15,7 @@
     color:var(--txt);font-family:'Segoe UI',system-ui,-apple-system,'PingFang SC','Microsoft YaHei',sans-serif;
     -webkit-user-select:none;user-select:none}
   #app{position:fixed;inset:0}
-  canvas{display:block;outline:none}
+  canvas{display:block;outline:none;touch-action:none}
 
   /* loading */
   #loader{position:fixed;inset:0;display:flex;flex-direction:column;align-items:center;
@@ -93,6 +93,26 @@
     opacity:0;transition:.2s;pointer-events:none}
   .rotpill.show{opacity:1}
   @media (max-width:760px){ #help{display:none} #palette{width:180px} }
+
+  /* mobile action buttons + touch-friendly sizing */
+  #mobilebar{position:fixed;right:12px;bottom:88px;z-index:25;display:none;flex-direction:column;gap:12px}
+  body.mobile #mobilebar{display:flex}
+  .mbtn{width:54px;height:54px;border-radius:50%;font-size:22px;background:var(--panel);
+    border:1px solid var(--line);color:var(--txt);backdrop-filter:blur(10px);
+    box-shadow:0 6px 20px #0008;cursor:pointer;display:flex;align-items:center;justify-content:center;
+    -webkit-tap-highlight-color:transparent}
+  .mbtn:active{background:#2c3744;transform:scale(0.94)}
+  body.mobile #help{display:none}
+  body.mobile #topbar{flex-wrap:wrap;max-width:94vw;justify-content:center}
+  body.mobile #palette{width:44vw;max-width:210px;max-height:72vh}
+  body.mobile #tabs .tab{font-size:13px;padding:7px 10px}
+  body.mobile #subfilter .subchip{font-size:12px;padding:5px 11px}
+  body.mobile #items{grid-template-columns:repeat(3,1fr);gap:8px}
+  body.mobile #clock{padding:8px 12px}
+  body.mobile #stats{display:none}
+  #helpMobile{display:none;background:var(--panel);border:1px solid var(--line);border-radius:10px;
+    padding:8px 12px;font-size:12px;color:var(--muted);backdrop-filter:blur(10px);max-width:260px}
+  body.mobile #helpMobile{display:block}
 </style>
 <script type="importmap">
 {
@@ -140,6 +160,11 @@
       <div><kbd>滚轮</kbd> 缩放 · <kbd>WASD</kbd> 移动 · <kbd>Q</kbd>/<kbd>E</kbd> 转向</div>
       <div><kbd>R</kbd> 旋转物体 · <kbd>X</kbd> 删除工具 · <kbd>Esc</kbd> 取消</div>
     </div>
+    <div id="helpMobile">单指拖 移动 · 轻点 放置 · 双指 缩放/转视角</div>
+  </div>
+  <div id="mobilebar">
+    <button class="mbtn" id="mRotate" title="旋转物体">🔄</button>
+    <button class="mbtn" id="mCancel" title="取消选择">✖</button>
   </div>
   <div class="rotpill" id="rotpill"></div>
   <div id="clock" title="点击切换 时间流速 / 暂停">

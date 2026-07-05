@@ -5,6 +5,7 @@ import { World, GROUND_MODEL } from './world.js';
 import { buildingModelIds } from './buildings.js';
 import { Traffic } from './traffic.js';
 import { DayNight } from './daynight.js';
+import { TouchControls } from './touch.js';
 import { initUI } from './ui.js';
 
 const SAVE_KEY = 'citysandbox.save.v1';
@@ -43,6 +44,13 @@ async function boot(){
   window.GAME = { eng, world, lib, ui, traffic, daynight, ctx: uictx };
 
   // clock HUD: click to cycle time speed (1× / 6× / 30× / pause)
+  // touch / mobile support: detect a coarse pointer, enable gestures + mobile UI
+  const isMobile = matchMedia('(pointer: coarse)').matches || ('ontouchstart' in window);
+  if (isMobile) document.body.classList.add('mobile');
+  new TouchControls(eng.god, ui, eng.renderer.domElement);
+  document.getElementById('mRotate').onclick = ()=> ui.rotate();
+  document.getElementById('mCancel').onclick = ()=> ui.cancel();
+
   const clockEl = document.getElementById('clock');
   const clockIcon = document.getElementById('clockIcon');
   const clockTime = document.getElementById('clockTime');
