@@ -195,8 +195,7 @@ export function initUI(ctx){
     ray.setFromCamera(ndc, camera);
     if (!ray.ray.intersectPlane(plane, hit3)) return null;
     const c = world.worldToCell(hit3.x, hit3.z);
-    if (!world.inBounds(c.gx,c.gz)) return null;
-    return { x:hit3.x, z:hit3.z, gx:c.gx, gz:c.gz };
+    return { x:hit3.x, z:hit3.z, gx:c.gx, gz:c.gz }; // buildable everywhere now
   }
 
   // ---------- actions (free placement at the exact clicked point) ----------

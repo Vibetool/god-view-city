@@ -82,8 +82,11 @@ export class World {
         void main(){
           float rx=mod(floor(vW.x+uOff), uStep);
           float rz=mod(floor(vW.z+uOff), uStep);
-          if (rx>0.5 && rz>0.5) discard;   // not a road cell -> reveal grass below
-          gl_FragColor=vec4(0.16, 0.175, 0.205, 1.0);
+          bool onRoad = rx<0.5 || rz<0.5;                                     // road cell
+          bool onSide = !onRoad && (rx<1.5||rx>uStep-1.5||rz<1.5||rz>uStep-1.5); // one-cell sidewalk ring
+          if (onRoad) gl_FragColor=vec4(0.16, 0.175, 0.205, 1.0);
+          else if (onSide) gl_FragColor=vec4(0.70, 0.70, 0.655, 1.0);
+          else discard;                                                       // block interior -> grass below
         }`
     });
     const gridPlane = new THREE.Mesh(new THREE.PlaneGeometry(GROUND, GROUND), gridMat);
@@ -91,17 +94,6 @@ export class World {
     gridPlane.name = 'roadGrid'; gridPlane.renderOrder = 1;
     this.roadGrid = gridPlane;
     scene.add(gridPlane);
-
-    // buildable-area border ring: you can only place things inside the original grid
-    const half = grid*CELL/2;
-    const bpts = [[-half,-half],[half,-half],[half,half],[-half,half],[-half,-half]]
-      .map(([x,z])=> new THREE.Vector3(x, 0.05, z));
-    const border = new THREE.Line(
-      new THREE.BufferGeometry().setFromPoints(bpts),
-      new THREE.LineBasicMaterial({ color:0xffffff, transparent:true, opacity:0.28 }));
-    border.name = 'buildBorder';
-    this.border = border;
-    scene.add(border);
 
     // grid helper
     this.grid3 = new THREE.GridHelper(grid*CELL, grid, 0x2c3a22, 0x2c3a22);
@@ -121,7 +113,6 @@ export class World {
 
   // ----- ground -----
   setGround(gx,gz,type){
-    if (!this.inBounds(gx,gz)) return;
     const k = this.key(gx,gz);
     const prev = this.groundMesh.get(k);
     if (prev){ this.groundGroup.remove(prev); this.groundMesh.delete(k); }
@@ -207,7 +198,6 @@ export class World {
   _markBlocked(rec, delta){
     if (this.isDrivable(rec)) return;           // moving vehicles don't block the road
     const c = this.worldToCell(rec.x, rec.z);
-    if (!this.inBounds(c.gx,c.gz)) return;
     const k = this.key(c.gx,c.gz);
     const n = (this.blocked.get(k)||0) + delta;
     if (n <= 0) this.blocked.delete(k); else this.blocked.set(k, n);
@@ -219,7 +209,6 @@ export class World {
   addObject(x, z, desc, rot=0, forceSnap=false, fixedY=null){
     if (this.snap || forceSnap){
       const c = this.worldToCell(x,z);
-      if (!this.inBounds(c.gx,c.gz)) return null;
       const p = this.cellCenter(c.gx,c.gz); x = p.x; z = p.z;
     }
     const g = this.buildObjectGroup(desc);
