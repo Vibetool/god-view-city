@@ -159,9 +159,9 @@ export function initUI(ctx){
     if (!g){ ghost.visible=false; return; }
     g.traverse(o=>{
       if (o.isMesh){
-        const mats = Array.isArray(o.material)?o.material:[o.material];
-        o.material = mats.map(m=>{ const c=m.clone(); c.transparent=true; c.opacity=0.55; c.depthWrite=false; return c; });
-        if (!Array.isArray(o.material)) o.material=o.material[0];
+        // keep single material single — an array material on ungrouped geometry renders nothing
+        const makeGhost = m=>{ const c=m.clone(); c.transparent=true; c.opacity=0.5; c.depthWrite=false; return c; };
+        o.material = Array.isArray(o.material) ? o.material.map(makeGhost) : makeGhost(o.material);
         o.castShadow=false; o.receiveShadow=false;
       }
     });
