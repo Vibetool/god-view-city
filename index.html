@@ -95,7 +95,7 @@
   @media (max-width:760px){ #help{display:none} #palette{width:180px} }
 
   /* mobile action buttons + touch-friendly sizing */
-  #mobilebar{position:fixed;right:12px;bottom:88px;z-index:25;display:none;flex-direction:column;gap:12px}
+  #mobilebar{position:fixed;right:12px;bottom:116px;z-index:25;display:none;flex-direction:column;gap:12px}
   body.mobile #mobilebar{display:flex}
   .mbtn{width:54px;height:54px;border-radius:50%;font-size:22px;background:var(--panel);
     border:1px solid var(--line);color:var(--txt);backdrop-filter:blur(10px);
@@ -103,8 +103,16 @@
     -webkit-tap-highlight-color:transparent}
   .mbtn:active{background:#2c3744;transform:scale(0.94)}
   body.mobile #help{display:none}
-  body.mobile #topbar{flex-wrap:wrap;max-width:94vw;justify-content:center}
-  body.mobile #palette{width:44vw;max-width:210px;max-height:72vh}
+  /* compact top bar so it wraps into fewer rows */
+  body.mobile #topbar{left:8px;right:auto;transform:none;flex-wrap:wrap;max-width:210px;
+    justify-content:flex-start;gap:6px;padding:6px 8px}
+  body.mobile #topbar .btn{padding:6px 9px;font-size:12px}
+  body.mobile #topbar .sep{display:none}
+  body.mobile #seedbox{font-size:11px}
+  body.mobile #seedInput{width:60px}
+  /* palette anchored to the lower-left so it never overlaps the top bar */
+  body.mobile #palette{top:auto;bottom:12px;left:8px;transform:none;
+    width:42vw;max-width:200px;max-height:54vh}
   body.mobile #tabs .tab{font-size:13px;padding:7px 10px}
   body.mobile #subfilter .subchip{font-size:12px;padding:5px 11px}
   body.mobile #items{grid-template-columns:repeat(3,1fr);gap:8px}
@@ -112,7 +120,7 @@
   body.mobile #stats{display:none}
   #helpMobile{display:none;background:var(--panel);border:1px solid var(--line);border-radius:10px;
     padding:8px 12px;font-size:12px;color:var(--muted);backdrop-filter:blur(10px);max-width:260px}
-  body.mobile #helpMobile{display:block}
+  body.mobile #helpMobile{display:block;max-width:155px;font-size:11px;padding:6px 9px;text-align:right}
 </style>
 <script type="importmap">
 {
