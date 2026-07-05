@@ -4,6 +4,7 @@ import { MODELS } from './manifest.js';
 import { World, GROUND_MODEL } from './world.js';
 import { buildingModelIds } from './buildings.js';
 import { Traffic } from './traffic.js';
+import { DayNight } from './daynight.js';
 import { initUI } from './ui.js';
 
 const SAVE_KEY = 'citysandbox.save.v1';
@@ -38,7 +39,15 @@ async function boot(){
   const uictx = { ...eng, world, lib };
   const ui = initUI(uictx);
   const traffic = new Traffic(world);
-  window.GAME = { eng, world, lib, ui, traffic, ctx: uictx };
+  const daynight = new DayNight(eng, 8); // start at 08:00
+  window.GAME = { eng, world, lib, ui, traffic, daynight, ctx: uictx };
+
+  // clock HUD: click to cycle time speed (1× / 6× / 30× / pause)
+  const clockEl = document.getElementById('clock');
+  const clockIcon = document.getElementById('clockIcon');
+  const clockTime = document.getElementById('clockTime');
+  const clockRate = document.getElementById('clockRate');
+  clockEl.onclick = ()=>{ const r = daynight.cycleRate(); clockRate.textContent = r===0 ? '⏸' : (r+'×'); };
 
   // sun target follows camera focus a bit (keeps shadows centered)
   const seedInput = document.getElementById('seedInput');
@@ -107,12 +116,11 @@ async function boot(){
     const dt = Math.min(clock.getDelta(), 0.05);
     eng.god.update(dt);
     traffic.update(dt);
-    // keep sun/shadow box centered on view target
-    eng.sun.position.set(eng.god.target.x+34, 52, eng.god.target.z+22);
-    eng.sun.target.position.copy(eng.god.target); eng.sun.target.updateMatrixWorld();
+    daynight.update(dt, eng.god.target); // advance time; drive sun/sky/fog/exposure
     ui.update();
     eng.renderer.render(eng.scene, eng.camera);
 
+    clockTime.textContent = daynight.hhmm(); clockIcon.textContent = daynight.icon();
     frames++; const now=performance.now();
     if (now-fpsT>500){ fps=Math.round(frames*1000/(now-fpsT)); frames=0; fpsT=now;
       statsEl.textContent = `物体 ${objCount} · ${fps} fps · 网格 ${GRID}×${GRID}`; }

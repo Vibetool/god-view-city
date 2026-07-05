@@ -57,7 +57,7 @@ export function createEngine(container){
     renderer.setSize(window.innerWidth, window.innerHeight);
   });
 
-  return { renderer, scene, camera, god, sun };
+  return { renderer, scene, camera, god, sun, hemi, fill, skyMat };
 }
 
 // ----------------------------------------------------------------------------
