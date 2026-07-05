@@ -37,19 +37,35 @@ export class Traffic {
     }
   }
   _initLight(rec){
-    // glowing phase indicator floating above the light pole
-    const ind = new THREE.Mesh(
-      new THREE.SphereGeometry(0.09, 12, 8),
-      new THREE.MeshBasicMaterial({ color: 0xff3b30 }));
-    ind.position.set(rec.x, (rec.y||0) + (rec.h||1) + 0.16, rec.z);
-    this.world.scene.add(ind);
-    return { rec, elapsed: 0, indicator: ind }; // starts red
+    // a clearly-recognizable signal head (red/amber/green stacked) above the pole,
+    // so a traffic light reads differently from a plain street lamp
+    const g = new THREE.Group();
+    const housing = new THREE.Mesh(
+      new THREE.BoxGeometry(0.17, 0.52, 0.14),
+      new THREE.MeshStandardMaterial({ color: 0x14161a, roughness: 0.85, metalness: 0.1 }));
+    g.add(housing);
+    const lamp = (y, dim)=>{
+      const m = new THREE.Mesh(
+        new THREE.SphereGeometry(0.062, 14, 10),
+        new THREE.MeshBasicMaterial({ color: dim }));
+      m.position.set(0, y, 0.08); g.add(m);
+      // faint back lens so it's visible from the far side too
+      const b = m.clone(); b.position.z = -0.08; g.add(b);
+      return [m, b];
+    };
+    const red = lamp( 0.15, 0x330000);
+    const amber = lamp(0.0,  0x332400);  // decorative, always dim (cycle is red/green only)
+    const green = lamp(-0.15, 0x06280f);
+    g.position.set(rec.x, (rec.y||0) + (rec.h||1) + 0.34, rec.z);
+    this.world.scene.add(g);
+    return { rec, elapsed: 0, group: g, red, green };
   }
   _disposeLight(L){
-    if (!L || !L.indicator) return;
-    this.world.scene.remove(L.indicator);
-    L.indicator.geometry.dispose(); L.indicator.material.dispose();
+    if (!L || !L.group) return;
+    this.world.scene.remove(L.group);
+    L.group.traverse(o=>{ if (o.isMesh){ o.geometry.dispose(); o.material.dispose(); } });
   }
+  _setLamp(pair, hex){ pair[0].material.color.setHex(hex); pair[1].material.color.setHex(hex); }
   _init(rec){
     return {
       oid:rec.oid, rec, group:rec.group,
@@ -69,7 +85,8 @@ export class Traffic {
     for (const L of this.lights.values()){
       L.elapsed = (L.elapsed + dt) % CYCLE_S;
       const red = L.elapsed < RED_S;
-      L.indicator.material.color.setHex(red ? 0xff3b30 : 0x2ecc40);
+      this._setLamp(L.red,   red ? 0xff2b1f : 0x330000);
+      this._setLamp(L.green, red ? 0x06280f : 0x2eff54);
       if (red){
         const c = this.world.worldToCell(L.rec.x, L.rec.z);
         this.redCells.add((c.gx+1)+','+c.gz); this.redCells.add((c.gx-1)+','+c.gz);
