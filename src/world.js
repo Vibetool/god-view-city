@@ -76,21 +76,24 @@ export class World {
       vertexShader: `varying vec3 vW;
         void main(){ vW=(modelMatrix*vec4(position,1.0)).xyz;
           gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0); }`,
-      // outputs a fixed screen-space colour (ShaderMaterial bypasses tone/colour
-      // management, so we write the final sRGB grey directly)
+      // outputs a fixed sRGB colour (ShaderMaterial bypasses tone/colour mgmt);
+      // tuned to match the buildable area's asphalt + concrete tiles, with a
+      // subtle per-cell variation so it doesn't look flat.
       fragmentShader: `varying vec3 vW; uniform float uStep; uniform float uOff;
+        float hash(vec2 p){ return fract(sin(dot(p, vec2(127.1,311.7)))*43758.5453); }
         void main(){
-          float rx=mod(floor(vW.x+uOff), uStep);
-          float rz=mod(floor(vW.z+uOff), uStep);
-          bool onRoad = rx<0.5 || rz<0.5;                                     // road cell
+          float cx=floor(vW.x+uOff), cz=floor(vW.z+uOff);
+          float rx=mod(cx, uStep), rz=mod(cz, uStep);
+          bool onRoad = rx<0.5 || rz<0.5;                                       // road cell
           bool onSide = !onRoad && (rx<1.5||rx>uStep-1.5||rz<1.5||rz>uStep-1.5); // one-cell sidewalk ring
-          if (onRoad) gl_FragColor=vec4(0.16, 0.175, 0.205, 1.0);
-          else if (onSide) gl_FragColor=vec4(0.70, 0.70, 0.655, 1.0);
-          else discard;                                                       // block interior -> grass below
+          float n = (hash(vec2(cx,cz))-0.5)*0.05;
+          if (onRoad) gl_FragColor=vec4(vec3(0.165,0.165,0.160)+n, 1.0);
+          else if (onSide) gl_FragColor=vec4(vec3(0.600,0.595,0.570)+n, 1.0);
+          else discard;                                                         // block interior -> grass below
         }`
     });
     const gridPlane = new THREE.Mesh(new THREE.PlaneGeometry(GROUND, GROUND), gridMat);
-    gridPlane.rotation.x = -Math.PI/2; gridPlane.position.y = 0.006;
+    gridPlane.rotation.x = -Math.PI/2; gridPlane.position.y = 0.03;
     gridPlane.name = 'roadGrid'; gridPlane.renderOrder = 1;
     this.roadGrid = gridPlane;
     scene.add(gridPlane);
@@ -132,7 +135,7 @@ export class World {
       mesh.traverse(o=>{ if(o.isMesh){ o.castShadow=false; o.receiveShadow=true; } });
     }
     const p = this.cellCenter(gx,gz);
-    mesh.position.set(p.x, type==='water'?0.04:0.012, p.z);
+    mesh.position.set(p.x, type==='water'?0.07:0.06, p.z); // above the shader grid layer
     this.groundGroup.add(mesh);
     this.groundMesh.set(k, mesh);
   }
