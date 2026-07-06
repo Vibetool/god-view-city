@@ -11,6 +11,13 @@ export function isRoadCellGlobal(gx, gz){
   return (((gx % ROAD_STEP) + ROAD_STEP) % ROAD_STEP) === 0
       || (((gz % ROAD_STEP) + ROAD_STEP) % ROAD_STEP) === 0;
 }
+// one-cell sidewalk ring just inside each block (matches the shader's onSide)
+export function isSidewalkCellGlobal(gx, gz){
+  if (isRoadCellGlobal(gx, gz)) return false;
+  const rx = ((gx % ROAD_STEP) + ROAD_STEP) % ROAD_STEP;
+  const rz = ((gz % ROAD_STEP) + ROAD_STEP) % ROAD_STEP;
+  return rx===1 || rx===ROAD_STEP-1 || rz===1 || rz===ROAD_STEP-1;
+}
 
 // ground type -> model id (null = base grass / special)
 export const GROUND_MODEL = {
@@ -103,6 +110,14 @@ export class World {
     this.grid3.position.y = 0.015; this.grid3.material.opacity = 0.35; this.grid3.material.transparent = true;
     this.grid3.visible = false;
     scene.add(this.grid3);
+
+    // streamed real road/sidewalk tiles around the camera, beyond the buildable
+    // grid — so nearby outside area looks identical to inside (shader is the
+    // far-distance fallback).
+    this.streamGroup = new THREE.Group();
+    scene.add(this.streamGroup);
+    this.streamTiles = new Map();   // cellKey -> mesh
+    this._streamKey = null;
   }
 
   key(gx,gz){ return gx + ',' + gz; }
@@ -141,9 +156,9 @@ export class World {
   }
   getGround(gx,gz){ return this.ground.get(this.key(gx,gz)) || 'grass'; }
   isAsphalt(gx,gz){
-    // inside the buildable area: use the (editable) ground map; outside: the
-    // infinite street grid, so cars can drive out onto it.
-    if (this.inBounds(gx,gz)) return this.ground.get(this.key(gx,gz))==='asphalt';
+    // a user-painted override wins anywhere; otherwise the fixed global grid
+    const t = this.ground.get(this.key(gx,gz));
+    if (t !== undefined) return t==='asphalt';
     return isRoadCellGlobal(gx,gz);
   }
   // nearest cell of a given ground type to world point (x,z); returns {gx,gz} or null.
@@ -257,6 +272,35 @@ export class World {
     const x = target.x, z = target.z;
     if (this.basePlane){ this.basePlane.position.x = x; this.basePlane.position.z = z; }
     if (this.roadGrid){ this.roadGrid.position.x = x; this.roadGrid.position.z = z; }
+    this.updateStream(target);
+  }
+  // stream real GLB road/sidewalk tiles in a window around the camera (outside
+  // the buildable grid only; inside is handled by generate/user tiles).
+  updateStream(target){
+    const RAD = 16;
+    const cc = this.worldToCell(target.x, target.z);
+    const ck = cc.gx+','+cc.gz;
+    if (ck === this._streamKey) return;           // camera hasn't crossed a cell
+    this._streamKey = ck;
+    const need = new Set();
+    for (let dx=-RAD; dx<=RAD; dx++) for (let dz=-RAD; dz<=RAD; dz++){
+      const gx=cc.gx+dx, gz=cc.gz+dz;
+      if (this.inBounds(gx,gz)) continue;         // inside grid: real tiles already there
+      let id=null;
+      if (isRoadCellGlobal(gx,gz)) id='road-asphalt-center';
+      else if (isSidewalkCellGlobal(gx,gz)) id='road-asphalt-pavement';
+      if (!id) continue;                          // block interior -> basePlane grass
+      const k=gx+','+gz; need.add(k);
+      if (!this.streamTiles.has(k)){
+        const m=this.lib.instance(id); if(!m) continue;
+        m.traverse(o=>{ if(o.isMesh){ o.castShadow=false; o.receiveShadow=true; } });
+        const p=this.cellCenter(gx,gz); m.position.set(p.x, 0.06, p.z);
+        this.streamGroup.add(m); this.streamTiles.set(k,m);
+      }
+    }
+    for (const [k,m] of this.streamTiles){
+      if (!need.has(k)){ this.streamGroup.remove(m); this.streamTiles.delete(k); }
+    }
   }
 
   clearAll(){

@@ -261,6 +261,9 @@ export function initUI(ctx){
     state.pointer.x=cx; state.pointer.y=cy; state.pointer.inside=true;
     const h=pointUnderPointer(); if(h) act(h);
   }
+  // mobile: show the ghost preview while a finger is held down (no hover on touch)
+  function setHover(cx, cy){ state.pointer.x=cx; state.pointer.y=cy; state.pointer.inside=true; }
+  function hideHover(){ state.pointer.inside=false; }
 
   // ---------- per-frame update ----------
   function update(){
@@ -284,7 +287,7 @@ export function initUI(ctx){
     }
   }
 
-  return { update, setSel, renderItems, tapAt, rotate, cancel };
+  return { update, setSel, renderItems, tapAt, rotate, cancel, setHover, hideHover };
 }
 
 function makeHighlight(){

@@ -23,10 +23,11 @@ export class TouchControls {
       if (this.pts.size === 1){
         this.mode = 'tap'; this.moved = 0;
         this.tapStart = { x:e.clientX, y:e.clientY, t:performance.now() };
+        this.ui.setHover(e.clientX, e.clientY);   // show ghost preview under the finger
       } else if (this.pts.size === 2){
-        this.mode = 'gesture'; this.prev = this._twoInfo();
+        this.mode = 'gesture'; this.prev = this._twoInfo(); this.ui.hideHover();
       } else {
-        this.mode = 'none';
+        this.mode = 'none'; this.ui.hideHover();
       }
     });
     d.addEventListener('pointermove', e=>{
@@ -38,8 +39,9 @@ export class TouchControls {
         this._gesture();
       } else if (this.pts.size === 1 && (this.mode === 'tap' || this.mode === 'pan')){
         this.moved += Math.hypot(dx, dy);
-        if (this.mode === 'tap' && this.moved > 10) this.mode = 'pan';
+        if (this.mode === 'tap' && this.moved > 10){ this.mode = 'pan'; this.ui.hideHover(); }
         if (this.mode === 'pan') this.god._panScreen(dx, dy);
+        else this.ui.setHover(e.clientX, e.clientY);   // still a tap -> move the ghost
       }
     });
     const end = e=>{
@@ -49,7 +51,7 @@ export class TouchControls {
       if (wasTap && this.tapStart && (performance.now() - this.tapStart.t) < 500 && this.moved < 10){
         this.ui.tapAt(this.tapStart.x, this.tapStart.y);
       }
-      if (this.pts.size === 0){ this.mode = 'none'; this.prev = null; }
+      if (this.pts.size === 0){ this.mode = 'none'; this.prev = null; this.ui.hideHover(); }
       else if (this.pts.size === 1){ this.mode = 'none'; } // after a gesture, wait for full lift
     };
     d.addEventListener('pointerup', end);
