@@ -116,7 +116,7 @@ export class World {
     // far-distance fallback).
     this.streamGroup = new THREE.Group();
     scene.add(this.streamGroup);
-    this.streamTiles = new Map();   // cellKey -> mesh
+    this.streamRad = 40;            // real-tile streaming radius around the camera (cells)
     this._streamKey = null;
   }
 
@@ -274,33 +274,44 @@ export class World {
     if (this.roadGrid){ this.roadGrid.position.x = x; this.roadGrid.position.z = z; }
     this.updateStream(target);
   }
-  // stream real GLB road/sidewalk tiles in a window around the camera (outside
-  // the buildable grid only; inside is handled by generate/user tiles).
+  // one-time: build InstancedMesh for road + sidewalk from the GLB templates
+  _ensureInstanced(){
+    if (this._roadInst) return true;
+    const rTpl=this.lib.templates.get('road-asphalt-center'), sTpl=this.lib.templates.get('road-asphalt-pavement');
+    if (!rTpl || !sTpl) return false;             // not preloaded yet
+    const extract=(tpl)=>{ tpl.updateMatrixWorld(true); let m=null; tpl.traverse(o=>{ if(o.isMesh && !m) m=o; });
+      return { geo:m.geometry, mat:Array.isArray(m.material)?m.material[0]:m.material, base:m.matrixWorld.clone() }; };
+    const R=extract(rTpl), S=extract(sTpl);
+    this._streamMax=8000;
+    const mk=(g,mt)=>{ const im=new THREE.InstancedMesh(g,mt,this._streamMax); im.count=0;
+      im.receiveShadow=true; im.castShadow=false; im.frustumCulled=false; this.streamGroup.add(im); return im; };
+    this._roadInst=mk(R.geo,R.mat); this._roadBase=R.base;
+    this._sideInst=mk(S.geo,S.mat); this._sideBase=S.base;
+    this._t4=new THREE.Matrix4(); this._m4=new THREE.Matrix4();
+    return true;
+  }
+  // stream real road/sidewalk tiles (as instances) in a window around the camera,
+  // outside the buildable grid only (inside is handled by generate/user tiles).
   updateStream(target){
-    const RAD = 16;
-    const cc = this.worldToCell(target.x, target.z);
-    const ck = cc.gx+','+cc.gz;
-    if (ck === this._streamKey) return;           // camera hasn't crossed a cell
-    this._streamKey = ck;
-    const need = new Set();
+    if (!this._ensureInstanced()) return;
+    const RAD=this.streamRad, MAX=this._streamMax;
+    const cc=this.worldToCell(target.x, target.z);
+    const ck=cc.gx+','+cc.gz;
+    if (ck===this._streamKey) return;             // camera hasn't crossed a cell
+    this._streamKey=ck;
+    let ri=0, si=0;
     for (let dx=-RAD; dx<=RAD; dx++) for (let dz=-RAD; dz<=RAD; dz++){
       const gx=cc.gx+dx, gz=cc.gz+dz;
       if (this.inBounds(gx,gz)) continue;         // inside grid: real tiles already there
-      let id=null;
-      if (isRoadCellGlobal(gx,gz)) id='road-asphalt-center';
-      else if (isSidewalkCellGlobal(gx,gz)) id='road-asphalt-pavement';
-      if (!id) continue;                          // block interior -> basePlane grass
-      const k=gx+','+gz; need.add(k);
-      if (!this.streamTiles.has(k)){
-        const m=this.lib.instance(id); if(!m) continue;
-        m.traverse(o=>{ if(o.isMesh){ o.castShadow=false; o.receiveShadow=true; } });
-        const p=this.cellCenter(gx,gz); m.position.set(p.x, 0.06, p.z);
-        this.streamGroup.add(m); this.streamTiles.set(k,m);
-      }
+      const road=isRoadCellGlobal(gx,gz), side=!road && isSidewalkCellGlobal(gx,gz);
+      if (!road && !side) continue;               // block interior -> basePlane grass
+      const p=this.cellCenter(gx,gz);
+      this._t4.makeTranslation(p.x, 0.06, p.z);
+      if (road){ if(ri<MAX){ this._m4.multiplyMatrices(this._t4,this._roadBase); this._roadInst.setMatrixAt(ri++, this._m4); } }
+      else     { if(si<MAX){ this._m4.multiplyMatrices(this._t4,this._sideBase); this._sideInst.setMatrixAt(si++, this._m4); } }
     }
-    for (const [k,m] of this.streamTiles){
-      if (!need.has(k)){ this.streamGroup.remove(m); this.streamTiles.delete(k); }
-    }
+    this._roadInst.count=ri; this._roadInst.instanceMatrix.needsUpdate=true;
+    this._sideInst.count=si; this._sideInst.instanceMatrix.needsUpdate=true;
   }
 
   clearAll(){
