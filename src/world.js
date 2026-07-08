@@ -414,6 +414,18 @@ export class World {
         place(gx,gz,{kind:'model',id:trucks[rng()*trucks.length|0]}, along?0:1);
       }
     }
+
+    // 5) a few cars beyond the buildable area — sparser than downtown (they stay
+    //    outside: the border blocks crossing, and they roam near the city)
+    const EXT=26, trucksOut=['truck-green','truck-grey','truck-flat'];
+    for (let gx=-EXT; gx<N+EXT; gx++) for (let gz=-EXT; gz<N+EXT; gz++){
+      if (this.inBounds(gx,gz) || !isRoadCellGlobal(gx,gz)) continue;
+      if (rng() < 0.003){
+        const along = isRoadCellGlobal(gx,gz+1)||isRoadCellGlobal(gx,gz-1);
+        const p = this.cellCenter(gx,gz);
+        this.addObject(p.x, p.z, {kind:'model',id:trucksOut[rng()*trucksOut.length|0]}, along?0:1, false);
+      }
+    }
     return this.seed;
   }
 

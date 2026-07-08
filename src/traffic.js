@@ -105,8 +105,15 @@ export class Traffic {
   _drive(s, dt, occ, cars){
     const w = this.world, g = s.group;
 
-    // (1) not yet on a road: drive straight toward the nearest asphalt cell
+    // (1) not yet on a road: snap onto the current cell if it's already a road
+    //     (keeps spawned outside cars outside), else drive to the nearest asphalt
     if (!s.hasCell){
+      const cur = w.worldToCell(g.position.x, g.position.z);
+      if (w.isAsphalt(cur.gx,cur.gz) && !w.isBlocked(cur.gx,cur.gz)){
+        const cc=w.cellCenter(cur.gx,cur.gz); g.position.set(cc.x,0,cc.z);
+        s.gx=cur.gx; s.gz=cur.gz; s.hasCell=true; s.hasNext=false; s.fx=9999; s.fz=9999;
+        this._syncRec(s); return;
+      }
       const near = w.nearestGround(g.position.x, g.position.z, 'asphalt', true); // skip blocked cells
       if (!near) return;                      // no free road exists -> idle
       const c = w.cellCenter(near.gx, near.gz);
@@ -168,8 +175,12 @@ export class Traffic {
     const w = this.world;
     const dirs = [[1,0],[-1,0],[0,1],[0,-1]];
     const GAP2 = 1.5*1.5; // keep ~2-cell spacing so full-length trucks never overlap
+    const insideSelf = w.inBounds(gx,gz);
+    const C = w.GRID/2, LIM = 80;                 // outside-car activity limit (cells from centre)
     const free = (x,z)=>{
       if (!w.isAsphalt(x,z) || w.isBlocked(x,z)) return false;
+      if (w.inBounds(x,z) !== insideSelf) return false;               // cars never cross the buildable border
+      if (!insideSelf && Math.max(Math.abs(x-C),Math.abs(z-C))>LIM) return false; // keep outside cars near the city
       if (occ.has(x+','+z) && occ.get(x+','+z)!==oid) return false; // another car's cell/target
       const c = w.cellCenter(x,z);                                  // keep a gap from other cars
       for (const o of cars){
