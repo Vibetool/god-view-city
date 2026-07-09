@@ -7,6 +7,7 @@ import { buildBuilding, WALL_STYLES, ROOF_KINDS } from './buildings.js';
 // continues infinitely beyond the buildable area (drawn by a shader, driven on
 // by cars). A cell is a road when its x-index OR z-index is a multiple of STEP.
 export const ROAD_STEP = 7;
+export const OUTER_RING = 20;   // land extends this many cells beyond the buildable grid; past it = water
 export function isRoadCellGlobal(gx, gz){
   return (((gx % ROAD_STEP) + ROAD_STEP) % ROAD_STEP) === 0
       || (((gz % ROAD_STEP) + ROAD_STEP) % ROAD_STEP) === 0;
@@ -61,49 +62,26 @@ export class World {
     this.objectGroup = new THREE.Group();
     scene.add(this.groundGroup, this.objectGroup);
 
-    // base grass plane — huge and camera-following, so the ground looks infinite
-    // (its far edge always sits inside the fog). Objects are still confined to the
-    // original grid; everything beyond the border is just open ground.
-    const GROUND = 600;
+    // Finite land, fixed in world space: grass covering the buildable grid plus
+    // a 20-cell outskirt ring. Everything beyond the land is water.
+    const LAND = grid + 2*OUTER_RING;            // 64 + 40 = 104 cells
     const tex = makeGrassTexture();
-    tex.repeat.set(GROUND, GROUND);
+    tex.repeat.set(LAND, LAND);
     const mat = new THREE.MeshStandardMaterial({ map:tex, roughness:1, metalness:0 });
-    const plane = new THREE.Mesh(new THREE.PlaneGeometry(GROUND, GROUND), mat);
-    plane.rotation.x = -Math.PI/2; plane.receiveShadow = true; plane.position.y = 0;
+    const plane = new THREE.Mesh(new THREE.PlaneGeometry(LAND*CELL, LAND*CELL), mat);
+    plane.rotation.x = -Math.PI/2; plane.receiveShadow = true; plane.position.y = 0.01;
     plane.name = 'baseGround';
     this.basePlane = plane;
     scene.add(plane);
 
-    // infinite street-grid overlay. World-space (grid stays put as the plane
-    // follows the camera); it aligns to isRoadCellGlobal so it continues the
-    // buildable area's roads. Inside the grid, real road tiles sit on top of it.
-    const gridMat = new THREE.ShaderMaterial({
-      transparent: true, depthWrite: false,
-      uniforms: { uStep:{ value:ROAD_STEP }, uOff:{ value:grid/2 } },
-      vertexShader: `varying vec3 vW;
-        void main(){ vW=(modelMatrix*vec4(position,1.0)).xyz;
-          gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0); }`,
-      // outputs a fixed sRGB colour (ShaderMaterial bypasses tone/colour mgmt);
-      // tuned to match the buildable area's asphalt + concrete tiles, with a
-      // subtle per-cell variation so it doesn't look flat.
-      fragmentShader: `varying vec3 vW; uniform float uStep; uniform float uOff;
-        float hash(vec2 p){ return fract(sin(dot(p, vec2(127.1,311.7)))*43758.5453); }
-        void main(){
-          float cx=floor(vW.x+uOff), cz=floor(vW.z+uOff);
-          float rx=mod(cx, uStep), rz=mod(cz, uStep);
-          bool onRoad = rx<0.5 || rz<0.5;                                       // road cell
-          bool onSide = !onRoad && (rx<1.5||rx>uStep-1.5||rz<1.5||rz>uStep-1.5); // one-cell sidewalk ring
-          float n = (hash(vec2(cx,cz))-0.5)*0.05;
-          if (onRoad) gl_FragColor=vec4(vec3(0.165,0.165,0.160)+n, 1.0);
-          else if (onSide) gl_FragColor=vec4(vec3(0.600,0.595,0.570)+n, 1.0);
-          else discard;                                                         // block interior -> grass below
-        }`
-    });
-    const gridPlane = new THREE.Mesh(new THREE.PlaneGeometry(GROUND, GROUND), gridMat);
-    gridPlane.rotation.x = -Math.PI/2; gridPlane.position.y = 0.03;
-    gridPlane.name = 'roadGrid'; gridPlane.renderOrder = 1;
-    this.roadGrid = gridPlane;
-    scene.add(gridPlane);
+    // water everywhere beyond the land (large, fixed, sits just below the grass)
+    const water = new THREE.Mesh(
+      new THREE.PlaneGeometry(2000, 2000),
+      new THREE.MeshStandardMaterial({ color:0x14538c, roughness:0.35, metalness:0.1 }));
+    water.rotation.x = -Math.PI/2; water.position.y = -0.1; water.receiveShadow = true;
+    water.name = 'water';
+    this.water = water;
+    scene.add(water);
 
     // grid helper
     this.grid3 = new THREE.GridHelper(grid*CELL, grid, 0x2c3a22, 0x2c3a22);
@@ -114,10 +92,8 @@ export class World {
     // streamed real road/sidewalk tiles around the camera, beyond the buildable
     // grid — so nearby outside area looks identical to inside (shader is the
     // far-distance fallback).
-    this.streamGroup = new THREE.Group();
+    this.streamGroup = new THREE.Group();   // holds the fixed outskirt road/sidewalk tiles
     scene.add(this.streamGroup);
-    this.streamRad = 40;            // real-tile streaming radius around the camera (cells)
-    this._streamKey = null;
   }
 
   key(gx,gz){ return gx + ',' + gz; }
@@ -155,11 +131,13 @@ export class World {
     this.groundMesh.set(k, mesh);
   }
   getGround(gx,gz){ return this.ground.get(this.key(gx,gz)) || 'grass'; }
+  // land = buildable grid + OUTER_RING outskirt; beyond it is water
+  inLand(gx,gz){ const M=OUTER_RING; return gx>=-M && gz>=-M && gx<this.GRID+M && gz<this.GRID+M; }
   isAsphalt(gx,gz){
-    // a user-painted override wins anywhere; otherwise the fixed global grid
+    // a user-painted override wins; otherwise the fixed global grid, but only on land
     const t = this.ground.get(this.key(gx,gz));
     if (t !== undefined) return t==='asphalt';
-    return isRoadCellGlobal(gx,gz);
+    return this.inLand(gx,gz) && isRoadCellGlobal(gx,gz);
   }
   // nearest cell of a given ground type to world point (x,z); returns {gx,gz} or null.
   // avoidBlocked skips cells carrying a static obstacle (used for car re-approach).
@@ -267,13 +245,8 @@ export class World {
   }
 
   setGridVisible(v){ this.grid3.visible = v; }
-  // keep the infinite ground + street grid centered under the camera focus
-  followGround(target){
-    const x = target.x, z = target.z;
-    if (this.basePlane){ this.basePlane.position.x = x; this.basePlane.position.z = z; }
-    if (this.roadGrid){ this.roadGrid.position.x = x; this.roadGrid.position.z = z; }
-    this.updateStream(target);
-  }
+  // land + water are fixed in world space now — nothing follows the camera
+  followGround(){ /* no-op: kept for the render-loop call site */ }
   // one-time: build InstancedMesh for road + sidewalk from the GLB templates
   _ensureInstanced(){
     if (this._roadInst) return true;
@@ -290,21 +263,16 @@ export class World {
     this._t4=new THREE.Matrix4(); this._m4=new THREE.Matrix4();
     return true;
   }
-  // stream real road/sidewalk tiles (as instances) in a window around the camera,
-  // outside the buildable grid only (inside is handled by generate/user tiles).
-  updateStream(target){
+  // fill the fixed outskirt ring with real road/sidewalk tiles (instances). Called
+  // once after models load; the ring is static so it never needs rebuilding.
+  fillOuterTiles(){
     if (!this._ensureInstanced()) return;
-    const RAD=this.streamRad, MAX=this._streamMax;
-    const cc=this.worldToCell(target.x, target.z);
-    const ck=cc.gx+','+cc.gz;
-    if (ck===this._streamKey) return;             // camera hasn't crossed a cell
-    this._streamKey=ck;
+    const M=OUTER_RING, MAX=this._streamMax;
     let ri=0, si=0;
-    for (let dx=-RAD; dx<=RAD; dx++) for (let dz=-RAD; dz<=RAD; dz++){
-      const gx=cc.gx+dx, gz=cc.gz+dz;
+    for (let gx=-M; gx<this.GRID+M; gx++) for (let gz=-M; gz<this.GRID+M; gz++){
       if (this.inBounds(gx,gz)) continue;         // inside grid: real tiles already there
       const road=isRoadCellGlobal(gx,gz), side=!road && isSidewalkCellGlobal(gx,gz);
-      if (!road && !side) continue;               // block interior -> basePlane grass
+      if (!road && !side) continue;               // block interior -> grass; edge -> water plane
       const p=this.cellCenter(gx,gz);
       this._t4.makeTranslation(p.x, 0.06, p.z);
       if (road){ if(ri<MAX){ this._m4.multiplyMatrices(this._t4,this._roadBase); this._roadInst.setMatrixAt(ri++, this._m4); } }
@@ -417,15 +385,16 @@ export class World {
 
     // 5) a few cars beyond the buildable area — sparser than downtown (they stay
     //    outside: the border blocks crossing, and they roam near the city)
-    const EXT=26, trucksOut=['truck-green','truck-grey','truck-flat'];
+    const EXT=OUTER_RING, trucksOut=['truck-green','truck-grey','truck-flat'];
     for (let gx=-EXT; gx<N+EXT; gx++) for (let gz=-EXT; gz<N+EXT; gz++){
-      if (this.inBounds(gx,gz) || !isRoadCellGlobal(gx,gz)) continue;
-      if (rng() < 0.003){
+      if (this.inBounds(gx,gz) || !isRoadCellGlobal(gx,gz)) continue;   // outskirt roads only
+      if (rng() < 0.004){
         const along = isRoadCellGlobal(gx,gz+1)||isRoadCellGlobal(gx,gz-1);
         const p = this.cellCenter(gx,gz);
         this.addObject(p.x, p.z, {kind:'model',id:trucksOut[rng()*trucksOut.length|0]}, along?0:1, false);
       }
     }
+    this.fillOuterTiles();     // (re)build the fixed outskirt road/sidewalk tiles
     return this.seed;
   }
 

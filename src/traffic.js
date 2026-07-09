@@ -176,11 +176,9 @@ export class Traffic {
     const dirs = [[1,0],[-1,0],[0,1],[0,-1]];
     const GAP2 = 1.5*1.5; // keep ~2-cell spacing so full-length trucks never overlap
     const insideSelf = w.inBounds(gx,gz);
-    const C = w.GRID/2, LIM = 80;                 // outside-car activity limit (cells from centre)
     const free = (x,z)=>{
-      if (!w.isAsphalt(x,z) || w.isBlocked(x,z)) return false;
+      if (!w.isAsphalt(x,z) || w.isBlocked(x,z)) return false;         // isAsphalt is land-only -> no water
       if (w.inBounds(x,z) !== insideSelf) return false;               // cars never cross the buildable border
-      if (!insideSelf && Math.max(Math.abs(x-C),Math.abs(z-C))>LIM) return false; // keep outside cars near the city
       if (occ.has(x+','+z) && occ.get(x+','+z)!==oid) return false; // another car's cell/target
       const c = w.cellCenter(x,z);                                  // keep a gap from other cars
       for (const o of cars){
