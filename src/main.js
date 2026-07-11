@@ -16,9 +16,20 @@ const bar = document.querySelector('#bar > i');
 const loadmsg = document.getElementById('loadmsg');
 function setProgress(p, msg){ bar.style.width = Math.round(p*100)+'%'; if(msg) loadmsg.textContent=msg; }
 
+// surface any early crash on the loading screen instead of hanging on it
+const isMobile = matchMedia('(pointer: coarse)').matches || ('ontouchstart' in window)
+  || /Android|iPhone|iPad|iPod|Mobile|MicroMessenger/i.test(navigator.userAgent);
+function showLoadError(msg){ const el=document.getElementById('loadmsg'); if(el && !window.__gameReady) el.textContent=msg; }
+window.addEventListener('error', e=> showLoadError('加载出错：'+(e.message||'')));
+window.addEventListener('unhandledrejection', e=> showLoadError('加载出错：'+((e.reason&&e.reason.message)||e.reason||'')));
+
 async function boot(){
   const app = document.getElementById('app');
-  const eng = createEngine(app);
+  if (!window.WebGLRenderingContext){ showLoadError('此浏览器不支持 WebGL，请用 Chrome/Safari 打开'); return; }
+  let eng;
+  try { eng = createEngine(app, { mobile:isMobile }); }
+  catch(err){ showLoadError('WebGL 初始化失败，请更新浏览器或换 Chrome 打开'); throw err; }
+  if (isMobile) document.body.classList.add('mobile');
   const lib = new ModelLibrary();
   lib.register(MODELS);
 
@@ -45,8 +56,6 @@ async function boot(){
 
   // clock HUD: click to cycle time speed (1× / 6× / 30× / pause)
   // touch / mobile support: detect a coarse pointer, enable gestures + mobile UI
-  const isMobile = matchMedia('(pointer: coarse)').matches || ('ontouchstart' in window);
-  if (isMobile) document.body.classList.add('mobile');
   new TouchControls(eng.god, ui, eng.renderer.domElement);
   document.getElementById('mRotate').onclick = ()=> ui.rotate();
   document.getElementById('mCancel').onclick = ()=> ui.cancel();
@@ -76,6 +85,7 @@ async function boot(){
   regen(Math.random()*1e9|0);
 
   setProgress(1, '完成');
+  window.__gameReady = true;
   setTimeout(()=>{ loader.style.opacity='0'; loader.style.transition='opacity .5s'; setTimeout(()=>loader.remove(),500); }, 150);
 
   // ---------- topbar ----------

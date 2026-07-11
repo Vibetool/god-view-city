@@ -1,5 +1,10 @@
 import * as THREE from 'three';
 
+// shared solid slab used to cap flat-roof buildings (the GLB flat roof reads as
+// an open terrace, so a plain building looked roofless)
+const _slabGeo = new THREE.BoxGeometry(1, 0.14, 1);
+const _slabMat = new THREE.MeshStandardMaterial({ color:0x33363b, roughness:0.92, metalness:0 });
+
 // A "building" is a single grid cell with a stack of 1x1x1 wall modules
 // (Kenney urban kit) capped by a roof piece. Multi-cell looking blocks emerge
 // from placing many adjacent single-cell buildings during generation.
@@ -34,12 +39,17 @@ export function buildBuilding(lib, def){
     inst.position.y = f * 1.0;
     g.add(inst);
   }
-  // roof cap
-  let roofId = `wall-${style}-roof`;
-  if (roof === 'slant') roofId = `wall-${style}-roof-slant`;
-  else if (roof === 'detailed') roofId = `wall-${style}-roof-detailed`;
-  const cap = lib.instance(roofId) || lib.instance(`wall-${style}-roof`);
-  if (cap){ cap.position.y = stories * 1.0; g.add(cap); }
+  // roof: slant/detailed use the sloped GLB caps; flat gets a solid slab so the
+  // top is clearly capped instead of an open box
+  if (roof === 'slant' || roof === 'detailed'){
+    const roofId = `wall-${style}-roof-${roof}`;
+    const cap = lib.instance(roofId) || lib.instance(`wall-${style}-roof`);
+    if (cap){ cap.position.y = stories; g.add(cap); }
+  } else {
+    const slab = new THREE.Mesh(_slabGeo, _slabMat);
+    slab.position.y = stories + 0.07; slab.castShadow = true; slab.receiveShadow = true;
+    g.add(slab);
+  }
 
   g.userData.def = { style, stories, roof, door };
   return g;

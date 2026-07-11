@@ -7,7 +7,7 @@ import { buildBuilding, WALL_STYLES, ROOF_KINDS } from './buildings.js';
 // continues infinitely beyond the buildable area (drawn by a shader, driven on
 // by cars). A cell is a road when its x-index OR z-index is a multiple of STEP.
 export const ROAD_STEP = 7;
-export const OUTER_RING = 20;   // land extends this many cells beyond the buildable grid; past it = water
+export const OUTER_RING = 21;   // land extends this many cells beyond the buildable grid; past it = water
 export function isRoadCellGlobal(gx, gz){
   return (((gx % ROAD_STEP) + ROAD_STEP) % ROAD_STEP) === 0
       || (((gz % ROAD_STEP) + ROAD_STEP) % ROAD_STEP) === 0;
@@ -77,7 +77,7 @@ export class World {
     // water everywhere beyond the land (large, fixed, sits just below the grass)
     const water = new THREE.Mesh(
       new THREE.PlaneGeometry(2000, 2000),
-      new THREE.MeshStandardMaterial({ color:0x14538c, roughness:0.35, metalness:0.1 }));
+      new THREE.MeshStandardMaterial({ color:0x0b3a66, roughness:0.4, metalness:0.1 }));
     water.rotation.x = -Math.PI/2; water.position.y = -0.1; water.receiveShadow = true;
     water.name = 'water';
     this.water = water;
@@ -255,7 +255,7 @@ export class World {
     const extract=(tpl)=>{ tpl.updateMatrixWorld(true); let m=null; tpl.traverse(o=>{ if(o.isMesh && !m) m=o; });
       return { geo:m.geometry, mat:Array.isArray(m.material)?m.material[0]:m.material, base:m.matrixWorld.clone() }; };
     const R=extract(rTpl), S=extract(sTpl);
-    this._streamMax=8000;
+    this._streamMax=5500;
     const mk=(g,mt)=>{ const im=new THREE.InstancedMesh(g,mt,this._streamMax); im.count=0;
       im.receiveShadow=true; im.castShadow=false; im.frustumCulled=false; this.streamGroup.add(im); return im; };
     this._roadInst=mk(R.geo,R.mat); this._roadBase=R.base;

@@ -6,12 +6,13 @@ export const CELL = 1; // one grid cell = 1 world unit (Kenney urban kit native 
 // ----------------------------------------------------------------------------
 // Scene / renderer / lighting
 // ----------------------------------------------------------------------------
-export function createEngine(container){
-  const renderer = new THREE.WebGLRenderer({ antialias:true, powerPreference:'high-performance' });
+export function createEngine(container, opts={}){
+  const mobile = !!opts.mobile;
+  const renderer = new THREE.WebGLRenderer({ antialias:!mobile, powerPreference:'high-performance' });
   renderer.setSize(window.innerWidth, window.innerHeight);
-  renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+  renderer.setPixelRatio(mobile ? 1 : Math.min(devicePixelRatio, 2)); // cap fill-rate on phones
   renderer.shadowMap.enabled = true;
-  renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+  renderer.shadowMap.type = mobile ? THREE.PCFShadowMap : THREE.PCFSoftShadowMap;
   renderer.outputColorSpace = THREE.SRGBColorSpace;
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
   renderer.toneMappingExposure = 1.04;
@@ -40,7 +41,7 @@ export function createEngine(container){
   const sun = new THREE.DirectionalLight(0xfff2d6, 2.0);
   sun.position.set(34, 52, 22);
   sun.castShadow = true;
-  sun.shadow.mapSize.set(2048, 2048);
+  sun.shadow.mapSize.set(mobile?1024:2048, mobile?1024:2048);
   sun.shadow.camera.near = 1; sun.shadow.camera.far = 220;
   const S = 60;
   sun.shadow.camera.left=-S; sun.shadow.camera.right=S; sun.shadow.camera.top=S; sun.shadow.camera.bottom=-S;
