@@ -1,7 +1,8 @@
 import * as THREE from 'three';
 import { createEngine, ModelLibrary } from './engine.js';
 import { MODELS } from './manifest.js';
-import { World, GROUND_MODEL } from './world.js';
+import { World, GROUND_MODEL, OUTER_RING } from './world.js';
+import { ValueNoise2D, hashStringToSeed } from './noise.js';
 import { buildingModelIds } from './buildings.js';
 import { Traffic } from './traffic.js';
 import { DayNight } from './daynight.js';
@@ -14,7 +15,45 @@ const GRID = 64;
 const loader = document.getElementById('loader');
 const bar = document.querySelector('#bar > i');
 const loadmsg = document.getElementById('loadmsg');
-function setProgress(p, msg){ bar.style.width = Math.round(p*100)+'%'; if(msg) loadmsg.textContent=msg; }
+function setProgress(p, msg){ bar.style.width = Math.round(p*100)+'%'; if(msg!==undefined) loadmsg.textContent=msg; }
+
+// 2D top-down thumbnail of the map a given seed would generate (roads are fixed;
+// buildings/parks vary with the seed) — mirrors world.generate's density formulas.
+function renderSeedPreview(canvas, seedStr){
+  const seed = hashStringToSeed(String(seedStr||'0'));
+  const noise = new ValueNoise2D(seed);
+  const N = GRID, M = OUTER_RING, LAND = N + 2*M;
+  const OFF = 12, VIEW = LAND + 2*OFF;                              // water margin -> shows the island
+  const S = canvas.width, ctx = canvas.getContext('2d');
+  const px = S / VIEW;
+  ctx.fillStyle = '#0a3560'; ctx.fillRect(0,0,S,S);                 // water everywhere
+  const cx = N/2, cz = N/2, mod7 = v => ((v%7)+7)%7;
+  for (let gx=-M; gx<N+M; gx++) for (let gz=-M; gz<N+M; gz++){
+    const rx=mod7(gx), rz=mod7(gz);
+    const road = rx===0 || rz===0;
+    const side = !road && (rx===1||rx===6||rz===1||rz===6);
+    let col;
+    if (road) col='#2b2f36';
+    else if (side) col='#9d9a8f';
+    else {
+      const inner = gx>=0 && gz>=0 && gx<N && gz<N;
+      if (inner){
+        const distC=Math.hypot(gx-cx,gz-cz)/(N*0.5);
+        const urban=noise.fbm(gx*0.07+11,gz*0.07+5,4);
+        const forest=noise.fbm(gx*0.11-7,gz*0.11+3,4);
+        const cityness=(1-distC)*0.9+(urban-0.5)*0.6;
+        if (cityness>0.45){ const st=Math.max(1,Math.min(6,1+Math.round((1-distC)*3+(urban-0.5)*3)));
+          const b=118-st*9; col=`rgb(${b+14},${b},${b-8})`; }        // taller = darker
+        else if (forest>0.58) col='#3f7a34';
+        else col='#72a043';
+      } else col='#72a043';                                          // outskirt grass
+    }
+    ctx.fillStyle=col;
+    ctx.fillRect(Math.floor((gx+M+OFF)*px), Math.floor((gz+M+OFF)*px), Math.ceil(px), Math.ceil(px));
+  }
+  ctx.strokeStyle='rgba(255,255,255,0.55)'; ctx.lineWidth=1.5;
+  ctx.strokeRect((M+OFF)*px, (M+OFF)*px, N*px, N*px);                // buildable border
+}
 
 // surface any early crash on the loading screen instead of hanging on it
 const isMobile = matchMedia('(pointer: coarse)').matches || ('ontouchstart' in window)
@@ -82,11 +121,34 @@ async function boot(){
     world.generate(s);
     updateStats();
   }
-  regen(Math.random()*1e9|0);
 
-  setProgress(1, '完成');
-  window.__gameReady = true;
-  setTimeout(()=>{ loader.style.opacity='0'; loader.style.transition='opacity .5s'; setTimeout(()=>loader.remove(),500); }, 150);
+  // ---------- landing page: 立即游玩 -> seed modal -> enter ----------
+  setProgress(1, '');
+  document.getElementById('bar').style.display = 'none';
+  document.getElementById('loadmsg').style.display = 'none';
+  const playBtn = document.getElementById('playBtn');
+  playBtn.style.display = 'inline-block';
+
+  const seedModal = document.getElementById('seedModal');
+  const seedField = document.getElementById('seedField');
+  const seedPreview = document.getElementById('seedPreview');
+  const randSeed = ()=> String((Math.random()*1e9)|0);
+  let previewT;
+  const refreshPreview = ()=> renderSeedPreview(seedPreview, seedField.value.trim() || '0');
+  const debouncedPreview = ()=>{ clearTimeout(previewT); previewT=setTimeout(refreshPreview, 200); };
+
+  playBtn.onclick = ()=>{ seedField.value = randSeed(); refreshPreview(); seedModal.classList.add('on'); seedField.blur(); };
+  seedField.addEventListener('input', debouncedPreview);
+  document.getElementById('seedRandom').onclick = ()=>{ seedField.value = randSeed(); refreshPreview(); };
+  function enterGame(){
+    const s = seedField.value.trim() || randSeed();
+    regen(s);
+    seedModal.classList.remove('on');
+    window.__gameReady = true;
+    loader.style.opacity='0'; loader.style.transition='opacity .5s'; setTimeout(()=>loader.remove(),500);
+  }
+  document.getElementById('seedGo').onclick = enterGame;
+  seedField.addEventListener('keydown', e=>{ if(e.key==='Enter') enterGame(); });
 
   // ---------- topbar ----------
   document.getElementById('btnRegen').onclick = ()=> regen();

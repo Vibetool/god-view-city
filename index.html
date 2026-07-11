@@ -25,6 +25,25 @@
   #bar{width:280px;height:8px;border-radius:6px;background:#222b38;overflow:hidden}
   #bar > i{display:block;height:100%;width:0%;background:linear-gradient(90deg,var(--accent),var(--accent2));transition:width .2s}
   #loadmsg{color:var(--muted);font-size:13px;height:16px}
+  #playBtn{display:none;margin-top:8px;padding:16px 46px;font-size:19px;font-weight:700;letter-spacing:2px;
+    color:#04101e;background:linear-gradient(180deg,#5ab0ff,#2e85e6);border:none;border-radius:14px;
+    cursor:pointer;box-shadow:0 10px 34px #2e85e688;transition:.15s}
+  #playBtn:hover{filter:brightness(1.08);transform:translateY(-2px)}
+
+  /* seed picker modal */
+  #seedModal{position:fixed;inset:0;z-index:60;display:none;align-items:center;justify-content:center;
+    background:#000c;backdrop-filter:blur(4px)}
+  #seedModal.on{display:flex}
+  #seedModal .mcard{background:#12161d;border:1px solid var(--line);border-radius:16px;padding:20px;
+    width:330px;max-width:92vw;box-shadow:0 20px 60px #000b;display:flex;flex-direction:column;gap:12px;align-items:center}
+  #seedModal h2{margin:0;font-size:17px;letter-spacing:1px}
+  #seedPreview{width:290px;height:290px;max-width:82vw;max-height:82vw;border-radius:10px;
+    border:1px solid var(--line);background:#0b3a66;image-rendering:pixelated}
+  #seedField{width:100%;background:#0c1016;border:1px solid var(--line);color:var(--txt);
+    border-radius:9px;padding:10px 12px;font-size:14px;font-family:ui-monospace,monospace;text-align:center}
+  #seedModal .mrow{display:flex;gap:10px;width:100%}
+  #seedModal .mrow .btn{flex:1;justify-content:center;padding:11px}
+  #seedModal .mtip{color:var(--muted);font-size:11.5px;margin-top:-4px}
 
   /* top bar */
   #topbar{position:fixed;top:10px;left:50%;transform:translateX(-50%);z-index:20;
@@ -139,6 +158,20 @@
     <h1>CITY <span>SANDBOX</span></h1>
     <div id="bar"><i></i></div>
     <div id="loadmsg">初始化…</div>
+    <button id="playBtn">▶ 立即游玩</button>
+  </div>
+
+  <div id="seedModal">
+    <div class="mcard">
+      <h2>选择地图种子</h2>
+      <canvas id="seedPreview" width="260" height="260"></canvas>
+      <input id="seedField" placeholder="留空则随机生成" autocomplete="off" />
+      <div class="mtip">输入任意文字/数字作为种子，或留空随机</div>
+      <div class="mrow">
+        <button class="btn" id="seedRandom">🎲 随机</button>
+        <button class="btn primary" id="seedGo">确定 · 进入</button>
+      </div>
+    </div>
   </div>
 
   <div id="topbar">
