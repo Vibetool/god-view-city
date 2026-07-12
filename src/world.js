@@ -77,7 +77,7 @@ export class World {
     // water everywhere beyond the land (large, fixed, sits just below the grass)
     const water = new THREE.Mesh(
       new THREE.PlaneGeometry(2000, 2000),
-      new THREE.MeshStandardMaterial({ color:0x0b3a66, roughness:0.4, metalness:0.1 }));
+      new THREE.MeshStandardMaterial({ color:0x1c5f97, roughness:0.4, metalness:0.1 }));
     water.rotation.x = -Math.PI/2; water.position.y = -0.1; water.receiveShadow = true;
     water.name = 'water';
     this.water = water;

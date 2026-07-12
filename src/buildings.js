@@ -39,30 +39,30 @@ export function buildBuilding(lib, def){
     inst.position.y = f * 1.0;
     g.add(inst);
   }
-  // roof: slant/detailed use the sloped GLB caps; flat gets a solid slab so the
-  // top is clearly capped instead of an open box
+  // roof: slant/detailed = sloped GLB caps; flat = solid slab; none = open top
   if (roof === 'slant' || roof === 'detailed'){
     const roofId = `wall-${style}-roof-${roof}`;
     const cap = lib.instance(roofId) || lib.instance(`wall-${style}-roof`);
     if (cap){ cap.position.y = stories; g.add(cap); }
-  } else {
+  } else if (roof === 'flat'){
     const slab = new THREE.Mesh(_slabGeo, _slabMat);
     slab.position.y = stories + 0.07; slab.castShadow = true; slab.receiveShadow = true;
     g.add(slab);
-  }
+  } // 'none' -> no roof (manual buildings are left open to add your own)
 
   g.userData.def = { style, stories, roof, door };
   return g;
 }
 
-// Palette presets — shown as one-click building stamps.
+// Palette presets — one-click building stamps. Manual buildings are left ROOFLESS
+// (roof:'none') so you can add your own roof from the 墙体 parts.
 export const BUILDING_PRESETS = [
-  { id:'house-a',   label:'小屋 A',   def:{ style:'a', stories:1, roof:'slant',    door:true } },
-  { id:'house-b',   label:'小屋 B',   def:{ style:'b', stories:1, roof:'slant',    door:true } },
-  { id:'home2-a',   label:'两层 A',   def:{ style:'a', stories:2, roof:'detailed', door:true } },
-  { id:'home2-b',   label:'两层 B',   def:{ style:'b', stories:2, roof:'detailed', door:true } },
-  { id:'flat3-a',   label:'公寓 A',   def:{ style:'a', stories:3, roof:'flat',     door:true } },
-  { id:'flat4-b',   label:'公寓 B',   def:{ style:'b', stories:4, roof:'flat',     door:true } },
-  { id:'tower-a',   label:'塔楼 A',   def:{ style:'a', stories:5, roof:'flat',     door:true } },
-  { id:'tower-b',   label:'塔楼 B',   def:{ style:'b', stories:6, roof:'flat',     door:true } },
+  { id:'house-a',   label:'小屋 A',   def:{ style:'a', stories:1, roof:'none', door:true } },
+  { id:'house-b',   label:'小屋 B',   def:{ style:'b', stories:1, roof:'none', door:true } },
+  { id:'home2-a',   label:'两层 A',   def:{ style:'a', stories:2, roof:'none', door:true } },
+  { id:'home2-b',   label:'两层 B',   def:{ style:'b', stories:2, roof:'none', door:true } },
+  { id:'flat3-a',   label:'三层 A',   def:{ style:'a', stories:3, roof:'none', door:true } },
+  { id:'flat4-b',   label:'四层 B',   def:{ style:'b', stories:4, roof:'none', door:true } },
+  { id:'tower-a',   label:'五层 A',   def:{ style:'a', stories:5, roof:'none', door:true } },
+  { id:'tower-b',   label:'六层 B',   def:{ style:'b', stories:6, roof:'none', door:true } },
 ];
