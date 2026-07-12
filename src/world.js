@@ -170,7 +170,11 @@ export class World {
   descMetrics(desc){
     if (desc.kind==='building'){
       const st = Math.max(1, Math.min(desc.def?.stories||2, 6));
-      return { w:1, d:1, h: st + 0.5 };
+      const roof = desc.def?.roof;
+      // real top height: walls reach y=st; add the roof only if there is one, so
+      // things stacked on a roofless building sit flush on its top floor
+      const h = (roof==='slant'||roof==='detailed') ? st+0.5 : (roof==='flat' ? st+0.14 : st);
+      return { w:1, d:1, h };
     }
     const m = this.lib.byId.get(desc.id);
     return m ? { w:m.w||1, d:m.d||1, h:m.h||1 } : { w:1, d:1, h:1 };
