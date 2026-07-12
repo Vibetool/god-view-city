@@ -349,7 +349,7 @@ export class World {
           // height: taller toward center
           const base = 1 + Math.round((1-distC)*3 + (urban-0.5)*3);
           const stories = Math.max(1, Math.min(6, base + (rng()<0.3? 1:0)));
-          const roof = stories<=2 ? (rng()<0.6?'slant':'detailed') : 'flat';
+          const roof = rng()<0.5 ? 'slant' : 'detailed';   // always a visible sloped roof
           place(gx,gz,{kind:'building',def:{style,stories,roof,door:true}}, roadDirToRot(gx,gz));
         } else if (isSidewalk){
           // street furniture along sidewalks, sparse
