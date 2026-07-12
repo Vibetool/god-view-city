@@ -184,18 +184,25 @@ export function initUI(ctx){
     ghost.rotation.y = state.rot*Math.PI/2;
   }
 
-  // ---------- raycast to ground: free world point + its grid cell ----------
+  // ---------- raycast: hit real geometry first (so you can place ON TOP of a
+  // building from any angle), fall back to the ground plane over empty land ----
   const ray = new THREE.Raycaster();
   const ndc = new THREE.Vector2();
   const plane = new THREE.Plane(new THREE.Vector3(0,1,0), 0);
   const hit3 = new THREE.Vector3();
+  const _pickTargets = [world.objectGroup, world.basePlane].filter(Boolean);
+  const _rc = [];
   function pointUnderPointer(){
     if (!state.pointer.inside) return null;
     ndc.set((state.pointer.x/innerWidth)*2-1, -(state.pointer.y/innerHeight)*2+1);
     ray.setFromCamera(ndc, camera);
-    if (!ray.ray.intersectPlane(plane, hit3)) return null;
-    const c = world.worldToCell(hit3.x, hit3.z);
-    return { x:hit3.x, z:hit3.z, gx:c.gx, gz:c.gz }; // buildable everywhere now
+    _rc.length = 0;
+    ray.intersectObjects(_pickTargets, true, _rc);
+    let hx, hz;
+    if (_rc.length){ hx=_rc[0].point.x; hz=_rc[0].point.z; }   // top of a building / ground mesh
+    else { if (!ray.ray.intersectPlane(plane, hit3)) return null; hx=hit3.x; hz=hit3.z; }
+    const c = world.worldToCell(hx, hz);
+    return { x:hx, z:hz, gx:c.gx, gz:c.gz };
   }
 
   // ---------- actions (free placement at the exact clicked point) ----------
@@ -268,8 +275,9 @@ export function initUI(ctx){
   // ---------- per-frame update ----------
   function update(){
     if (pillT && performance.now()>pillT){ pill.classList.remove('show'); pillT=0; }
-    const h = pointUnderPointer();
     const s = state.sel;
+    if (!s){ ghost.visible=false; highlight.visible=false; return; } // nothing selected -> skip raycast
+    const h = pointUnderPointer();
     if (h && s){
       if (s.type==='ground'){               // grid-snapped tile highlight
         highlight.visible=true; ghost.visible=false;
