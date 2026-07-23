@@ -8,8 +8,12 @@ export const CELL = 1; // one grid cell = 1 world unit (Kenney urban kit native 
 // ----------------------------------------------------------------------------
 export function createEngine(container, opts={}){
   const mobile = !!opts.mobile;
+  // a backgrounded tab can report 0×0 at load time — fall back so the camera's
+  // aspect never becomes NaN; the resize handler corrects it once visible
+  const initW = window.innerWidth  || document.documentElement.clientWidth  || 800;
+  const initH = window.innerHeight || document.documentElement.clientHeight || 600;
   const renderer = new THREE.WebGLRenderer({ antialias:!mobile, powerPreference:'high-performance' });
-  renderer.setSize(window.innerWidth, window.innerHeight);
+  renderer.setSize(initW, initH);
   renderer.setPixelRatio(mobile ? 1 : Math.min(devicePixelRatio, 2)); // cap fill-rate on phones
   renderer.shadowMap.enabled = true;
   renderer.shadowMap.type = mobile ? THREE.PCFShadowMap : THREE.PCFSoftShadowMap;
@@ -50,12 +54,14 @@ export function createEngine(container, opts={}){
   const fill = new THREE.DirectionalLight(0xbcd0ff, 0.35);
   fill.position.set(-30, 24, -18); scene.add(fill);
 
-  const camera = new THREE.PerspectiveCamera(50, window.innerWidth/window.innerHeight, 0.5, 600);
+  const camera = new THREE.PerspectiveCamera(50, initW/initH, 0.5, 600);
   const god = new GodCamera(camera, renderer.domElement);
 
   window.addEventListener('resize', ()=>{
-    camera.aspect = window.innerWidth/window.innerHeight; camera.updateProjectionMatrix();
-    renderer.setSize(window.innerWidth, window.innerHeight);
+    const w = window.innerWidth, h = window.innerHeight;
+    if (!w || !h) return;   // backgrounded tabs can report 0×0 — a /0 aspect would NaN the projection forever
+    camera.aspect = w/h; camera.updateProjectionMatrix();
+    renderer.setSize(w, h);
   });
 
   return { renderer, scene, camera, god, sun, hemi, fill, skyMat };

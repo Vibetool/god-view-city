@@ -194,7 +194,8 @@ export function initUI(ctx){
   const _rc = [];
   function pointUnderPointer(){
     if (!state.pointer.inside) return null;
-    ndc.set((state.pointer.x/innerWidth)*2-1, -(state.pointer.y/innerHeight)*2+1);
+    const vw = dom.clientWidth || innerWidth || 1, vh = dom.clientHeight || innerHeight || 1;
+    ndc.set((state.pointer.x/vw)*2-1, -(state.pointer.y/vh)*2+1);
     ray.setFromCamera(ndc, camera);
     _rc.length = 0;
     ray.intersectObjects(_pickTargets, true, _rc);

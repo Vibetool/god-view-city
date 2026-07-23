@@ -42,6 +42,23 @@
   .achToast .t2{font-size:16px;font-weight:800;color:#ffd75e;letter-spacing:1px}
   .achToast .t3{font-size:11px;color:#8b98a5;margin-top:1px}
 
+  /* achievements panel */
+  #achModal{position:fixed;inset:0;z-index:60;display:none;align-items:center;justify-content:center;
+    background:#000c;backdrop-filter:blur(4px)}
+  #achModal.on{display:flex}
+  #achModal .mcard{background:#12161d;border:1px solid var(--line);border-radius:16px;padding:20px;
+    width:340px;max-width:92vw;box-shadow:0 20px 60px #000b;display:flex;flex-direction:column;gap:12px}
+  #achModal h2{margin:0;font-size:17px;letter-spacing:1px;text-align:center}
+  .achRow{display:flex;align-items:center;gap:12px;padding:10px 12px;border:1px solid var(--line);
+    border-radius:10px;background:#0e131a}
+  .achRow.locked{opacity:.55;filter:grayscale(.6)}
+  .achRow .ic{font-size:24px;line-height:1}
+  .achRow .nm{font-weight:800;font-size:14px;color:#ffd75e;letter-spacing:1px}
+  .achRow.locked .nm{color:var(--txt)}
+  .achRow .ds{font-size:11px;color:var(--muted);margin-top:1px}
+  .achRow .stat{margin-left:auto;font-size:11.5px;color:var(--muted);white-space:nowrap;font-family:ui-monospace,monospace}
+  .achRow .stat.done{color:var(--accent2);font-weight:700}
+
   /* seed picker modal */
   #seedModal{position:fixed;inset:0;z-index:60;display:none;align-items:center;justify-content:center;
     background:#000c;backdrop-filter:blur(4px)}
@@ -173,6 +190,14 @@
     <button id="playBtn">▶ 立即游玩</button>
   </div>
 
+  <div id="achModal">
+    <div class="mcard">
+      <h2>🏆 成就一览</h2>
+      <div id="achList"></div>
+      <button class="btn" id="achClose" style="justify-content:center">关闭</button>
+    </div>
+  </div>
+
   <div id="seedModal">
     <div class="mcard">
       <h2>选择地图种子</h2>
@@ -192,6 +217,7 @@
     <div class="sep"></div>
     <button class="btn" id="btnSave">💾 保存</button>
     <button class="btn" id="btnLoad">📂 读取</button>
+    <button class="btn" id="btnAch">🏆 成就</button>
     <button class="btn" id="btnGrid">▦ 网格</button>
     <button class="btn" id="btnSnap">⊞ 吸附:关</button>
     <button class="btn primary" id="btnTraffic">🚗 行驶:开</button>

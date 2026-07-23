@@ -165,6 +165,21 @@ async function boot(){
     btnSnap.classList.toggle('primary', world.snap);
     if (world.snap) world.setGridVisible(true), world._gridOn=true;
   };
+  // achievements panel
+  const achModal = document.getElementById('achModal');
+  const achListEl = document.getElementById('achList');
+  function renderAchList(){
+    achListEl.innerHTML = ach.list(traffic.cars.size).map(a=>`
+      <div class="achRow ${a.unlocked?'':'locked'}">
+        <span class="ic">${a.icon}</span>
+        <div><div class="nm">${a.name}</div><div class="ds">${a.desc}</div></div>
+        <div class="stat ${a.unlocked?'done':''}">${a.unlocked?'✅ 已解锁':(a.progress? a.progress.cur+' / '+a.progress.max : '未解锁')}</div>
+      </div>`).join('');
+  }
+  document.getElementById('btnAch').onclick = ()=>{ renderAchList(); achModal.classList.add('on'); };
+  document.getElementById('achClose').onclick = ()=> achModal.classList.remove('on');
+  achModal.addEventListener('click', e=>{ if(e.target===achModal) achModal.classList.remove('on'); });
+
   const btnTraffic = document.getElementById('btnTraffic');
   btnTraffic.onclick = ()=>{
     traffic.enabled = !traffic.enabled;

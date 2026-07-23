@@ -29,6 +29,17 @@ export class Achievements {
     if (this.buildings >= 10) this.unlock('engineer');
   }
   checkCars(n){ if (n >= 40) this.unlock('metropolis'); }
+  // snapshot for the achievements panel (carCount = live vehicles on the map)
+  list(carCount = 0){
+    const has = id => this.unlocked.has(id);
+    return [
+      { id:'geographer', ...DEFS.geographer, unlocked:has('geographer'), progress:null },
+      { id:'engineer',   ...DEFS.engineer,   unlocked:has('engineer'),
+        progress:{ cur:Math.min(this.buildings,10), max:10 } },
+      { id:'metropolis', ...DEFS.metropolis, unlocked:has('metropolis'),
+        progress:{ cur:Math.min(carCount,40), max:40 } },
+    ];
+  }
 }
 
 function toast(def){
