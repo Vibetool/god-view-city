@@ -7,6 +7,7 @@ import { buildingModelIds } from './buildings.js';
 import { Traffic } from './traffic.js';
 import { DayNight } from './daynight.js';
 import { TouchControls } from './touch.js';
+import { Achievements } from './achievements.js';
 import { initUI } from './ui.js';
 
 const SAVE_KEY = 'citysandbox.save.v1';
@@ -87,11 +88,12 @@ async function boot(){
 
   setProgress(0.9, '生成城市…');
   const world = new World(eng.scene, lib, GRID);
-  const uictx = { ...eng, world, lib };
+  const ach = new Achievements();
+  const uictx = { ...eng, world, lib, ach };
   const ui = initUI(uictx);
   const traffic = new Traffic(world);
   const daynight = new DayNight(eng, 8); // start at 08:00
-  window.GAME = { eng, world, lib, ui, traffic, daynight, ctx: uictx };
+  window.GAME = { eng, world, lib, ui, traffic, daynight, ach, ctx: uictx };
 
   // clock HUD: click to cycle time speed (1× / 6× / 30× / pause)
   // touch / mobile support: detect a coarse pointer, enable gestures + mobile UI
@@ -204,7 +206,8 @@ async function boot(){
     clockTime.textContent = daynight.hhmm(); clockIcon.textContent = daynight.icon();
     frames++; const now=performance.now();
     if (now-fpsT>500){ fps=Math.round(frames*1000/(now-fpsT)); frames=0; fpsT=now;
-      statsEl.textContent = `物体 ${objCount} · ${fps} fps · 网格 ${GRID}×${GRID}`; }
+      statsEl.textContent = `物体 ${objCount} · ${fps} fps · 网格 ${GRID}×${GRID}`;
+      ach.checkCars(traffic.cars.size); }
     if (toastT && now>toastT){ const c=document.getElementById('toolchip'); if(c._old){ c.innerHTML=c._old; c._old=null; } toastT=0; }
     requestAnimationFrame(frame);
   }

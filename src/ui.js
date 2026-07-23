@@ -206,14 +206,21 @@ export function initUI(ctx){
   }
 
   // ---------- actions (free placement at the exact clicked point) ----------
+  const ach = ctx.ach;   // achievements (optional)
   function act(h){
     const s = state.sel; if (!s) return;
-    if (s.type==='ground') world.setGround(h.gx,h.gz,s.ground);
+    if (s.type==='ground'){
+      world.setGround(h.gx,h.gz,s.ground);
+      ach && ach.onGroundPlaced();
+    }
     else if (s.type==='delete'){
       if (!world.removeNearest(h.x,h.z,0.7)) world.setGround(h.gx,h.gz,'grass');
     }
     else if (s.type==='object') world.addObject(h.x,h.z,{kind:'model',id:s.id}, state.rot);
-    else if (s.type==='building') world.addObject(h.x,h.z,{kind:'building',def:s.def}, state.rot);
+    else if (s.type==='building'){
+      const ok = world.addObject(h.x,h.z,{kind:'building',def:s.def}, state.rot);
+      if (ok != null && ach) ach.onBuildingPlaced();
+    }
   }
   // ground & delete drag by cell; objects scatter by distance; buildings click-only
   const isDragPaint = s => s && (s.type==='ground'||s.type==='delete'||s.type==='object');
